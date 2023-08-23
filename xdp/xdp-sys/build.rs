@@ -17,9 +17,9 @@ fn check_os() {
 }
 
 /// Link a library by its name and version.
-/// 
+///
 /// # Panics
-/// 
+///
 /// Panics either when the program fails to find the library in the
 /// default system library path or when the installed library version
 /// does not satisfy the minimum version given by "version" parameter.
@@ -36,6 +36,7 @@ fn main() {
 
     let bindings = bindgen::Builder::default()
         .header(WRAPPER)
+        .layout_tests(false)
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         .generate()
         .expect("Unable to generate bindings");
