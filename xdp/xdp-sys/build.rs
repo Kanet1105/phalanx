@@ -1,3 +1,4 @@
+use bindgen::{Builder, CargoCallbacks};
 use std::env;
 use std::path::PathBuf;
 
@@ -34,10 +35,10 @@ fn main() {
     check_os();
     link_lib(LIB_NAME, LIB_VERSION);
 
-    let bindings = bindgen::Builder::default()
+    let bindings = Builder::default()
         .header(WRAPPER)
-        .layout_tests(false)
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+        .parse_callbacks(Box::new(CargoCallbacks))
+        .generate_inline_functions(true)
         .generate()
         .expect("Unable to generate bindings");
 
