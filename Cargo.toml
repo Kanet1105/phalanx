@@ -1,0 +1,10 @@
+[package]
+name = "mangonel"
+version = "0.1.0"
+license = "BSD-3-Clause"
+description = "Tool for network acceleration"
+repository = "https://github.com/kanet1105/mangonel"
+edition = "2021"
+rust-version = "1.74"
+
+[dependencies]
