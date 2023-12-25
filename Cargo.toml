@@ -1,10 +1,16 @@
-[package]
-name = "mangonel"
-version = "0.1.0"
+[workspace]
+members = [
+    "crates/dpdk-rs",
+    "crates/dpdk-sys",
+]
+
+[workspace.package]
+authors = ["Donghoon Lee <zombiedelah@gmail.com>"]
 license = "BSD-3-Clause"
-description = "Tool for network acceleration"
-repository = "https://github.com/kanet1105/mangonel"
 edition = "2021"
 rust-version = "1.74"
 
-[dependencies]
+[workspace.dependencies]
+# local
+dpdk-rs = { path = "./crates/dpdk-rs" }
+dpdk-sys = { path = "./crates/dpdk-sys" }
