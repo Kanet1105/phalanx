@@ -6,6 +6,7 @@ const WRAPPER: &str = "wrapper.c";
 
 fn main() {
     check_os();
+
     link_library(LIBRARY_NAME, LIBRARY_VERSION);
 
     // Build the crate again when the content of WRAPPER changes.
@@ -16,6 +17,7 @@ fn main() {
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .derive_debug(true)
         .opaque_type("rte_.*_hdr")
+        .opaque_type("rte_arp_ipv4")
         .generate()
         .expect(&format!(
             "Unable to generate bindings for {} v{}",
@@ -23,10 +25,13 @@ fn main() {
         ));
 
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
-    builder.write_to_file(out_path.join("bindings-dpdk.rs")).expect(&format!(
-        "Unable to write bindings to the file at {:?}",
-        out_path.as_os_str(),
-    ));
+
+    builder
+        .write_to_file(out_path.join("bindings_dpdk.rs"))
+        .expect(&format!(
+            "Unable to write bindings to the file at {:?}",
+            out_path.as_os_str(),
+        ));
 }
 
 /// Check the target OS that we will build against. Currently supports Linux only.
