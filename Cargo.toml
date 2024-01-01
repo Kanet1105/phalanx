@@ -3,6 +3,7 @@ members = [
     "crates/dpdk-rs",
     "crates/dpdk-sys",
 ]
+resolver = "2"
 
 [workspace.package]
 authors = ["Donghoon Lee <zombiedelah@gmail.com>"]
