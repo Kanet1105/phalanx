@@ -2,6 +2,6 @@
 #[allow(non_camel_case_types)]
 #[allow(non_snake_case)]
 mod dpdk {
-    include!(concat!(env!("OUT_DIR"), "/bindings-dpdk.rs"));
+    include!(concat!(env!("OUT_DIR"), "/bindings_dpdk.rs"));
 }
 pub use dpdk::*;
