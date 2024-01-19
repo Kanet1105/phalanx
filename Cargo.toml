@@ -1,7 +1,7 @@
 [workspace]
 members = [
-    "crates/dpdk-rs",
     "crates/dpdk-sys",
+    "crates/driver-util",
 ]
 resolver = "2"
 
@@ -12,6 +12,5 @@ edition = "2021"
 rust-version = "1.74"
 
 [workspace.dependencies]
-# local
-dpdk-rs = { path = "./crates/dpdk-rs" }
 dpdk-sys = { path = "./crates/dpdk-sys" }
+driver-util = { path = "./crates/driver-util" }
