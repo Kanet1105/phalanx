@@ -1,0 +1,13 @@
+[package]
+name = "dpdk-sys"
+version = "23.11.0"
+description = "Raw bindings to Intel DPDK library"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[build-dependencies]
+bindgen = "0.69.2"
+cc = "1.0.83"
+pkg-config = "0.3.29"
