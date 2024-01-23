@@ -2,12 +2,11 @@
 pub enum ErrorKind {
     InvalidDevicePath,
     DeviceNotFound,
-    InvalidDeviceNamePath,
-    DeviceNameNotFound,
-    InvalidUnicodeInDeviceName,
     InvalidDriverPath,
     DriverNotFound,
     DriverBind,
+    DriverUnbind,
+    DriverOverride,
 }
 
 pub struct Error {

@@ -1,20 +1,16 @@
 use crate::device::EthernetDevice;
 use crate::error::{Error, ErrorKind};
-use std::fs;
-use std::path::PathBuf;
+use std::ffi::OsString;
+use std::fs::{self, DirEntry};
+use std::os::unix::ffi::OsStrExt;
+use std::path::{Path, PathBuf};
 
 pub const DRIVER_PATH: &str = "/sys/bus/pci/drivers";
 
 #[derive(Debug)]
 pub struct Driver {
-    name: String,
+    name: OsString,
     path: PathBuf,
-}
-
-impl std::cmp::PartialEq<&str> for Driver {
-    fn eq(&self, other: &&str) -> bool {
-        self.name.as_str() == *other
-    }
 }
 
 impl AsRef<[u8]> for Driver {
@@ -23,11 +19,34 @@ impl AsRef<[u8]> for Driver {
     }
 }
 
-impl From<&str> for Driver {
-    fn from(value: &str) -> Self {
+impl AsRef<str> for Driver {
+    fn as_ref(&self) -> &str {
+        self.name
+            .to_str()
+            .expect("Invalid Unicode in the driver name")
+    }
+}
+
+impl AsRef<Path> for Driver {
+    fn as_ref(&self) -> &Path {
+        self.path.as_path()
+    }
+}
+
+impl From<DirEntry> for Driver {
+    fn from(value: DirEntry) -> Self {
         Self {
-            name: value.to_string(),
-            path: PathBuf::from(DRIVER_PATH).join(value),
+            name: value.file_name(),
+            path: value.path(),
+        }
+    }
+}
+
+impl From<PathBuf> for Driver {
+    fn from(value: PathBuf) -> Self {
+        Self {
+            name: value.clone().into_os_string(),
+            path: value,
         }
     }
 }
@@ -37,28 +56,33 @@ impl Driver {
         let driver_list: Vec<Self> = fs::read_dir(DRIVER_PATH)
             .map_err(|error| Error::new(ErrorKind::InvalidDriverPath, error))?
             .filter_map(|entry| entry.ok())
-            .filter_map(|entry| entry.file_name().to_str())
-            .map(|driver_name| Self::from(driver_name))
+            .map(Self::from)
             .collect();
         Ok(driver_list)
     }
 
-    pub fn find_by_name(name: &str) -> Result<Self, Error> {
+    pub fn find_by_name(name: impl AsRef<str>) -> Result<Self, Error> {
         Self::list_drivers()?
             .into_iter()
-            .find_map(|driver| match driver == name {
-                true => Some(driver),
-                false => None,
-            })
+            .find_map(
+                |driver| match AsRef::<str>::as_ref(&driver) == name.as_ref() {
+                    true => Some(driver),
+                    false => None,
+                },
+            )
             .ok_or(Error::from(ErrorKind::DriverNotFound))
     }
 
     pub fn find_by_bound_device(device: &EthernetDevice) -> Result<Self, Error> {
         Self::list_drivers()?
             .into_iter()
-            .find_map(|driver| match driver.path.join(device).exists() {
-                true => Some(driver),
-                false => None,
+            .find_map(|driver| {
+                let driver_path: &Path = driver.as_ref();
+                let device_name: &str = device.as_ref();
+                match driver_path.join(device_name).exists() {
+                    true => Some(driver),
+                    false => None,
+                }
             })
             .ok_or(Error::from(ErrorKind::DriverNotFound))
     }
@@ -66,6 +90,12 @@ impl Driver {
     pub fn bind(&self, device: &EthernetDevice) -> Result<(), Error> {
         fs::write(self.path.join("bind"), device)
             .map_err(|error| Error::new(ErrorKind::DriverBind, error))?;
+        Ok(())
+    }
+
+    pub fn unbind(&self, device: &EthernetDevice) -> Result<(), Error> {
+        fs::write(self.path.join("unbind"), device)
+            .map_err(|error| Error::new(ErrorKind::DriverUnbind, error))?;
         Ok(())
     }
 }
