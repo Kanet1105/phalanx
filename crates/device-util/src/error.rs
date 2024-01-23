@@ -1,13 +1,13 @@
 #[derive(Debug, Eq, PartialEq)]
 pub enum ErrorKind {
-    DeviceDoesNotExist,
     InvalidDevicePath,
-    DriverUnbind,
-    DriverOverride,
-    DriverDoesNotExist,
-    DriverBind,
+    DeviceNotFound,
+    InvalidDeviceNamePath,
+    DeviceNameNotFound,
+    InvalidUnicodeInDeviceName,
     InvalidDriverPath,
-    InvalidUtf8,
+    DriverNotFound,
+    DriverBind,
 }
 
 pub struct Error {
