@@ -3,7 +3,7 @@ use crate::error::{Error, ErrorKind};
 use std::ffi::OsString;
 use std::fs::{self, DirEntry};
 use std::os::unix::ffi::OsStrExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub const DEVICE_PATH: &str = "/sys/bus/pci/devices";
 

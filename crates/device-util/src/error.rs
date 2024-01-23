@@ -22,8 +22,8 @@ impl std::fmt::Debug for Error {
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Self::fmt_kind(&self, f)?;
-        Self::fmt_source(&self, f)?;
+        Self::fmt_kind(self, f)?;
+        Self::fmt_source(self, f)?;
         Ok(())
     }
 }
@@ -51,12 +51,12 @@ impl Error {
     }
 
     fn fmt_kind(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Error: {:?}\n", self.kind)
+        write!(f, "Error: {:?}", self.kind)
     }
 
     fn fmt_source(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.source {
-            Some(source) => write!(f, "Source: {}", source),
+            Some(source) => writeln!(f, "({})", source),
             None => Ok(()),
         }
     }
