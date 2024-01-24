@@ -1,7 +1,7 @@
 [workspace]
 members = [
-    "crates/device-util",
-    "crates/dpdk-sys",
+    "mangonel-device-util",
+    "mangonel-dpdk-sys",
 ]
 resolver = "2"
 
@@ -12,5 +12,5 @@ edition = "2021"
 rust-version = "1.74"
 
 [workspace.dependencies]
-device-util = { path = "./crates/device-util" }
-dpdk-sys = { path = "./crates/dpdk-sys" }
+device-util = { path = "./mangonel-device-util" }
+dpdk-sys = { path = "./mangonel-dpdk-sys" }
