@@ -1,6 +1,4 @@
-use device_util::device::*;
-use device_util::driver::*;
-use device_util::error::*;
+use device_util::{device::*, driver::*, error::*};
 use std::fs;
 
 #[test]

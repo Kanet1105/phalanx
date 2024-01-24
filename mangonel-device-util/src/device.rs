@@ -1,9 +1,13 @@
-use crate::driver::Driver;
-use crate::error::{Error, ErrorKind};
-use std::ffi::OsString;
-use std::fs::{self, DirEntry};
-use std::os::unix::ffi::OsStrExt;
-use std::path::PathBuf;
+use crate::{
+    driver::Driver,
+    error::{Error, ErrorKind},
+};
+use std::{
+    ffi::OsString,
+    fs::{self, DirEntry},
+    os::unix::ffi::OsStrExt,
+    path::PathBuf,
+};
 
 pub const DEVICE_PATH: &str = "/sys/bus/pci/devices";
 

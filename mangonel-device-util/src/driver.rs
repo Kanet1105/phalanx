@@ -1,9 +1,13 @@
-use crate::device::EthernetDevice;
-use crate::error::{Error, ErrorKind};
-use std::ffi::OsString;
-use std::fs::{self, DirEntry};
-use std::os::unix::ffi::OsStrExt;
-use std::path::{Path, PathBuf};
+use crate::{
+    device::EthernetDevice,
+    error::{Error, ErrorKind},
+};
+use std::{
+    ffi::OsString,
+    fs::{self, DirEntry},
+    os::unix::ffi::OsStrExt,
+    path::{Path, PathBuf},
+};
 
 pub const DRIVER_PATH: &str = "/sys/bus/pci/drivers";
 
