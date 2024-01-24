@@ -1,0 +1,2 @@
+imports_granularity = "Crate"
+comment_width = 60
