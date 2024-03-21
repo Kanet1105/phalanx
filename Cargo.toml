@@ -1,8 +1,8 @@
 [workspace]
 members = [
     "mangonel",
-    "mangonel-device-util",
-    "mangonel-dpdk-sys",
+    "mangonel-core",
+    "mangonel-mmap",
 ]
 resolver = "2"
 
@@ -11,7 +11,3 @@ authors = ["Donghoon Lee <zombiedelah@gmail.com>"]
 license = "BSD-3-Clause"
 edition = "2021"
 rust-version = "1.75"
-
-[workspace.dependencies]
-device-util = { path = "./mangonel-device-util" }
-dpdk-sys = { path = "./mangonel-dpdk-sys" }

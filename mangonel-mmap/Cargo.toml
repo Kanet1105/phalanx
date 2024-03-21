@@ -1,0 +1,13 @@
+[package]
+name = "mangonel-mmap"
+version = "0.1.0"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mangonel-core = { path = "../mangonel-core" }
+
+[features]
+hugepages = []
