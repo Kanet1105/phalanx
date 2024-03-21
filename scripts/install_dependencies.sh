@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # The minimum required kernel version
-KERNEL_VERSION=4.14
+MIN_KERNEL_VERSION=5.11
 
 # Function to compare kernel versions
 version_ge() {
@@ -10,11 +10,11 @@ version_ge() {
 
 # Get the current kernel version
 current_kernel=$(uname -r)
-if version_ge $min_kernel $current_kernel; then
-    echo "Current kernel version ($current_kernel) is less than or equal to $min_kernel. Exiting."
+if version_ge $MIN_KERNEL_VERSION $current_kernel; then
+    echo "Current kernel version ($current_kernel) is less than or equal to $MIN_KERNEL_VERSION. Exiting."
     exit 1
 else
-    echo "Current kernel version ($current_kernel) is greater than $min_kernel. Continuing."
+    echo "Current kernel version ($current_kernel) is greater than $MIN_KERNEL_VERSION. Continuing."
 fi
 
 # Function to identify the Linux distribution
@@ -34,7 +34,7 @@ case $DISTRO in
     ubuntu|debian)
         echo "Detected Ubuntu/Debian system."
         echo "Installing pkg-config..."
-        sudo apt-get install pkg-config
+        sudo apt install pkg-config
         ;;
     rhel|fedora|centos)
         echo "Detected RHEL/Fedora/CentOS system."
@@ -127,7 +127,7 @@ case $DISTRO in
     ubuntu|debian)
         echo "Detected Ubuntu/Debian system."
         echo "Installing libnuma-dev..."
-        sudo apt-get install libnuma-dev
+        sudo apt install libnuma-dev
         ;;
     alpine)
         echo "Detected Alpine Linux system."
@@ -139,6 +139,44 @@ case $DISTRO in
         exit 1
         ;;
 esac
+
+# Install pip3.
+case $DISTRO in
+    rhel|centos)
+        echo "Detected RHEL/CentOS system."
+        echo "Installing pip3..."
+        yum install epel-release
+        yum install python-pip
+        ;;
+    fedora)
+        echo "Detected Fedora system"
+        echo "Installing pip3..."
+        sudo dnf install python3-pip
+    ;;
+    ubuntu|debian)
+        echo "Detected Ubuntu/Debian system."
+        echo "Installing pip3..."
+        sudo apt install python3-pip
+        ;;
+    alpine)
+        echo "Detected Alpine Linux system."
+        echo "Installing pip3..."
+        sudo apk add numactl-dev
+        ;;
+    *)
+        echo "Unsupported distribution: $DISTRO"
+        exit 1
+        ;;
+esac
+
+# Install meson
+sudo pip3 install meson
+
+# Install ninja
+sudo pip3 install ninja
+
+# Store the project root path.
+ROOT_PATH=$(pwd)
 
 # Download and compile DPDK from Source.
 DPDK_VERSION="23.11"
@@ -157,3 +195,13 @@ cd build
 ninja
 sudo meson install
 sudo ldconfig
+
+# Go back to the project root path.
+cd $ROOT_PATH
+
+# Download and compile libbpf from Source
+LIBBPF_REPOSITORY_URL="https://github.com/libbpf/libbpf.git"
+echo "Downloading and compiling libbpf from Source..."
+git clone $LIBBPF_REPOSITORY_URL
+cd libbpf/src
+sudo make
