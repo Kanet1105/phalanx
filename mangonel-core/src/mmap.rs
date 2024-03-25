@@ -4,7 +4,7 @@ use std::{
     ptr::{self, NonNull},
 };
 
-use mangonel_core::{
+use crate::{
     error::{Error, WrapError},
     libc::{self, MAP_ANONYMOUS, MAP_HUGETLB, MAP_SHARED, PROT_READ, PROT_WRITE},
 };
@@ -69,5 +69,13 @@ impl Mmap {
             address: NonNull::new(address).unwrap(),
             length,
         })
+    }
+
+    pub fn as_ptr(&self) -> *mut c_void {
+        self.address.as_ptr()
+    }
+
+    pub fn length(&self) -> usize {
+        self.length
     }
 }

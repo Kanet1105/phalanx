@@ -7,5 +7,4 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-device-util.workspace = true
-dpdk-sys.workspace = true
+mangonel-core = { path = "../mangonel-core" }

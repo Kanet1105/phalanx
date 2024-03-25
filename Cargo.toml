@@ -1,9 +1,8 @@
 [workspace]
 members = [
     "mangonel",
-    "mangonel-af-xdp",
     "mangonel-core",
-    "mangonel-mmap",
+    "mangonel-libxdp-sys",
 ]
 resolver = "2"
 

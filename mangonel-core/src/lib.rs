@@ -1,4 +1,4 @@
 pub mod error;
+pub mod mmap;
 
-pub use libbpf_sys;
 pub use libc;
