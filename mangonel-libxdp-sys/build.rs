@@ -23,7 +23,7 @@ fn link_library(name: &str, version: &str) {
     pkg_config::Config::new()
         .atleast_version(version)
         .probe(name)
-        .unwrap_or_else(|error| panic!("Failed to link library: {}", error));
+        .unwrap_or_else(|error| panic!("Failed to link the library: {}", error));
 }
 
 fn main() {
