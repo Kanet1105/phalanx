@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    error::{Error, WrapError},
+    error::{Error, ErrorKind, WrapError},
     libc::{self, MAP_ANONYMOUS, MAP_HUGETLB, MAP_SHARED, PROT_READ, PROT_WRITE},
 };
 
@@ -18,7 +18,7 @@ impl Drop for Mmap {
     fn drop(&mut self) {
         unsafe {
             libc::munmap(self.address.as_ptr(), self.length)
-                .wrap("Failed to unmap the mmap region.")
+                .wrap(ErrorKind::Munmap)
                 .unwrap()
         }
     }
@@ -26,21 +26,13 @@ impl Drop for Mmap {
 
 impl Mmap {
     pub fn new(length: usize) -> Result<Self, Error> {
-        let address = unsafe {
-            let protection_mode = PROT_READ | PROT_WRITE;
-            let flags = MAP_SHARED | MAP_ANONYMOUS;
+        let protection_mode = PROT_READ | PROT_WRITE;
+        let flags = MAP_SHARED | MAP_ANONYMOUS;
+        let address = unsafe { libc::mmap(ptr::null_mut(), length, protection_mode, flags, -1, 0) };
 
-            let address = libc::mmap(ptr::null_mut(), length, protection_mode, flags, -1, 0);
-
-            if address == libc::MAP_FAILED {
-                return Err(Error::boxed(
-                    io::Error::last_os_error(),
-                    "Failed to create a mmap region.",
-                ));
-            }
-
-            address
-        };
+        if address == libc::MAP_FAILED {
+            return Err((ErrorKind::Mmap, io::Error::last_os_error()).into());
+        }
 
         Ok(Self {
             address: NonNull::new(address).unwrap(),
@@ -48,22 +40,14 @@ impl Mmap {
         })
     }
 
-    #[cfg(features = "hugepages")]
     pub fn hugepages(length: usize) -> Result<Self, Error> {
-        use mangonel_core::libc::MAP_HUGETLB;
+        let protection_mode = PROT_READ | PROT_WRITE;
+        let flags = MAP_SHARED | MAP_ANONYMOUS | MAP_HUGETLB;
+        let address = unsafe { libc::mmap(ptr::null_mut(), length, protection_mode, flags, -1, 0) };
 
-        let address = unsafe {
-            let protection_mode = PROT_READ | PROT_WRITE;
-            let flags = MAP_SHARED | MAP_ANONYMOUS | MAP_HUGETLB;
-            let address = libc::mmap(ptr::null_mut(), length, protection_mode, flags, -1, 0);
-
-            if address == libc::MAP_FAILED {
-                return Err(Error::boxed(
-                    io::Error::last_os_error(),
-                    "Failed to create a mmap region.",
-                ));
-            }
-        };
+        if address == libc::MAP_FAILED {
+            return Err((ErrorKind::Mmap, io::Error::last_os_error()).into());
+        }
 
         Ok(Self {
             address: NonNull::new(address).unwrap(),
