@@ -1,27 +1,21 @@
-use std::{io, panic::Location};
+use std::panic::Location;
 
 pub trait WrapError {
     type Output;
 
-    fn wrap<C>(self, context: C) -> Self::Output
-    where
-        C: std::fmt::Debug + 'static;
+    fn wrap(self, kind: ErrorKind) -> Self::Output;
 }
 
 impl<T, E> WrapError for Result<T, E>
 where
-    E: std::error::Error + 'static,
+    E: Into<ErrorSource>,
 {
     type Output = Result<T, Error>;
 
-    #[track_caller]
-    fn wrap<C>(self, context: C) -> Self::Output
-    where
-        C: std::fmt::Debug + 'static,
-    {
+    fn wrap(self, kind: ErrorKind) -> Self::Output {
         match self {
             Ok(value) => Ok(value),
-            Err(error) => Err(Error::boxed(error, context)),
+            Err(error) => Err((kind, error).into()),
         }
     }
 }
@@ -29,21 +23,24 @@ where
 impl WrapError for i32 {
     type Output = Result<(), Error>;
 
-    fn wrap<C>(self, context: C) -> Self::Output
-    where
-        C: std::fmt::Debug + 'static,
-    {
+    fn wrap(self, kind: ErrorKind) -> Self::Output {
         match self.is_negative() {
-            true => Err(Error::ffi(-self, context)),
+            true => Err((kind, -self).into()),
             false => Ok(()),
         }
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub enum ErrorKind {
+    Mmap,
+    Munmap,
+}
+
 pub struct Error {
+    kind: ErrorKind,
+    source: ErrorSource,
     location: Location<'static>,
-    context: Box<dyn std::fmt::Debug>,
-    source: ErrorKind,
 }
 
 impl std::fmt::Debug for Error {
@@ -54,59 +51,50 @@ impl std::fmt::Debug for Error {
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(
-            f,
-            "[{}:{}]: {:?}",
-            self.location.file(),
-            self.location.line(),
-            self.context
-        )?;
-        write!(f, "{}", self.source)?;
-        Ok(())
+        write!(f, "{:?}: {} at {}", self.kind, self.source, self.location)
     }
 }
 
 impl std::error::Error for Error {}
 
-impl Error {
+impl<E> From<(ErrorKind, E)> for Error
+where
+    E: Into<ErrorSource>,
+{
     #[track_caller]
-    pub fn boxed<E, C>(error: E, context: C) -> Self
-    where
-        E: std::error::Error + 'static,
-        C: std::fmt::Debug + 'static,
-    {
+    fn from(value: (ErrorKind, E)) -> Self {
         Self {
+            kind: value.0,
+            source: value.1.into(),
             location: *Location::caller(),
-            context: Box::new(context),
-            source: ErrorKind::Boxed(Box::new(error)),
-        }
-    }
-
-    #[track_caller]
-    pub fn ffi<C>(error_code: i32, context: C) -> Self
-    where
-        C: std::fmt::Debug + 'static,
-    {
-        Self {
-            location: *Location::caller(),
-            context: Box::new(context),
-            source: ErrorKind::FFI(error_code),
         }
     }
 }
 
-pub enum ErrorKind {
-    Boxed(Box<dyn std::error::Error>),
+enum ErrorSource {
+    IO(std::io::Error),
     FFI(i32),
-    StaticStr(&'static str),
 }
 
-impl std::fmt::Display for ErrorKind {
+impl std::fmt::Display for ErrorSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self {
-            Self::Boxed(error) => write!(f, "{}", error),
-            Self::FFI(error_code) => write!(f, "{}", io::Error::from_raw_os_error(*error_code)),
-            Self::StaticStr(error_str) => write!(f, "{}", error_str),
+        match self {
+            Self::IO(error) => write!(f, "{}", error),
+            Self::FFI(error_code) => {
+                write!(f, "{}", std::io::Error::from_raw_os_error(*error_code))
+            }
         }
+    }
+}
+
+impl From<std::io::Error> for ErrorSource {
+    fn from(value: std::io::Error) -> Self {
+        Self::IO(value)
+    }
+}
+
+impl From<i32> for ErrorSource {
+    fn from(value: i32) -> Self {
+        Self::FFI(value)
     }
 }
