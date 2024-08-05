@@ -14,6 +14,7 @@ use crate::{
     util,
 };
 
+#[allow(unused)]
 pub struct Umem {
     mmap: Mmap,
     umem: NonNull<xsk_umem>,
