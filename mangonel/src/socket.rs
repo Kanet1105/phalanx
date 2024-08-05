@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     ffi::{CString, NulError},
     io,
     mem::MaybeUninit,
@@ -9,12 +10,15 @@ use std::{
 use libc::XDP_USE_NEED_WAKEUP;
 use mangonel_libxdp_sys::{
     xsk_ring_cons, xsk_ring_cons__peek, xsk_ring_cons__release, xsk_ring_cons__rx_desc,
-    xsk_ring_prod, xsk_ring_prod__reserve, xsk_socket, xsk_socket__create, xsk_socket__delete,
-    xsk_socket_config, xsk_socket_config__bindgen_ty_1, XDP_SHARED_UMEM,
-    XSK_LIBXDP_FLAGS__INHIBIT_PROG_LOAD,
+    xsk_ring_prod, xsk_ring_prod__reserve, xsk_ring_prod__submit, xsk_ring_prod__tx_desc,
+    xsk_socket, xsk_socket__create, xsk_socket__delete, xsk_socket_config,
+    xsk_socket_config__bindgen_ty_1, XDP_SHARED_UMEM,
 };
 
-use crate::umem::{Umem, UmemError};
+use crate::{
+    packet::Packet,
+    umem::{Umem, UmemError},
+};
 
 pub struct Socket {
     inner: Arc<SocketInner>,
@@ -54,7 +58,7 @@ impl Socket {
             rx_size: rx_ring_size,
             tx_size: tx_ring_size,
             __bindgen_anon_1: xsk_socket_config__bindgen_ty_1 { libbpf_flags: 0 },
-            xdp_flags: XSK_LIBXDP_FLAGS__INHIBIT_PROG_LOAD | XDP_SHARED_UMEM,
+            xdp_flags: XDP_SHARED_UMEM,
             bind_flags: XDP_USE_NEED_WAKEUP,
         };
 
@@ -105,13 +109,6 @@ impl Socket {
     }
 }
 
-#[derive(Debug)]
-pub struct Packet<'a> {
-    pub address: u64,
-    pub length: u32,
-    pub data: &'a mut [u8],
-}
-
 pub struct Receiver {
     rx_ring: xsk_ring_cons,
     socket: Socket,
@@ -124,11 +121,11 @@ impl Receiver {
         Self { socket, rx_ring }
     }
 
-    pub fn receive(&mut self, buffer: &mut Vec<Packet>) -> u32 {
+    pub fn receive(&mut self, buffer: &mut VecDeque<Packet>) -> u32 {
         let mut index: u32 = 0;
 
         let received =
-            unsafe { xsk_ring_cons__peek(self.as_ptr(), buffer.len() as u32, &mut index) };
+            unsafe { xsk_ring_cons__peek(&mut self.rx_ring, buffer.len() as u32, &mut index) };
 
         if received == 0 {
             return received;
@@ -136,7 +133,7 @@ impl Receiver {
 
         for _ in 0..received {
             unsafe {
-                let descriptor = xsk_ring_cons__rx_desc(self.as_ptr(), index);
+                let descriptor = xsk_ring_cons__rx_desc(&mut self.rx_ring, index);
                 let address = (*descriptor).addr;
                 let length = (*descriptor).len;
 
@@ -149,18 +146,14 @@ impl Receiver {
                     ),
                 };
 
-                buffer.push(packet);
+                buffer.push_back(packet);
                 index += 1;
             }
         }
 
-        unsafe { xsk_ring_cons__release(self.as_ptr(), received) }
+        unsafe { xsk_ring_cons__release(&mut self.rx_ring, received) }
 
         received
-    }
-
-    fn as_ptr(&self) -> *mut xsk_ring_cons {
-        self.rx_ring.ring as *mut xsk_ring_cons
     }
 }
 
@@ -176,19 +169,37 @@ impl Sender {
         Self { tx_ring, socket }
     }
 
-    pub fn send(&mut self, buffer: &mut Vec<u8>) {
+    pub fn send(&mut self, buffer: &mut VecDeque<Packet>) -> u32 {
         let mut index: u32 = 0;
         let batch_size = buffer.len() as u32;
 
-        let available = unsafe { xsk_ring_prod__reserve(self.as_ptr(), batch_size, &mut index) };
-        for _ in 0..available {
-            // let packet
+        if batch_size == 0 {
+            return 0;
         }
+
+        let available =
+            unsafe { xsk_ring_prod__reserve(&mut self.tx_ring, batch_size, &mut index) };
+        for _ in 0..available {
+            let packet = buffer.pop_front().unwrap();
+
+            unsafe {
+                let descriptor = xsk_ring_prod__tx_desc(&mut self.tx_ring, available);
+                (*descriptor).addr = packet.address;
+                (*descriptor).len = packet.length;
+                index += 1;
+            }
+        }
+
+        if available > 0 {
+            unsafe { xsk_ring_prod__submit(&mut self.tx_ring, available) };
+        }
+
+        return 0;
     }
 
-    fn as_ptr(&self) -> *mut xsk_ring_prod {
-        self.tx_ring.ring as *mut xsk_ring_prod
-    }
+    // pub fn needs_wakeup(&self) -> bool {
+    //     let needs_wakeup = unsafe { xsk_ring_prod__needs_wakeup(self.as_ptr()) };
+    // }
 }
 
 #[derive(Debug)]
