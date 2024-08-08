@@ -18,6 +18,10 @@ impl CompletionRing {
     pub fn as_ptr(&self) -> *mut xsk_ring_cons {
         self.0.as_ptr()
     }
+
+    pub fn size(&self) -> u32 {
+        unsafe { self.0.as_ref().size }
+    }
 }
 
 pub struct FillRing(NonNull<xsk_ring_prod>);
@@ -33,6 +37,10 @@ impl FillRing {
 
     pub fn as_ptr(&self) -> *mut xsk_ring_prod {
         self.0.as_ptr()
+    }
+
+    pub fn size(&self) -> u32 {
+        unsafe { self.0.as_ref().size }
     }
 }
 
@@ -50,6 +58,10 @@ impl RxRing {
     pub fn as_ptr(&self) -> *mut xsk_ring_cons {
         self.0.as_ptr()
     }
+
+    pub fn size(&self) -> u32 {
+        unsafe { self.0.as_ref().size }
+    }
 }
 
 pub struct TxRing(NonNull<xsk_ring_prod>);
@@ -65,6 +77,10 @@ impl TxRing {
 
     pub fn as_ptr(&self) -> *mut xsk_ring_prod {
         self.0.as_ptr()
+    }
+
+    pub fn size(&self) -> u32 {
+        unsafe { self.0.as_ref().size }
     }
 }
 
