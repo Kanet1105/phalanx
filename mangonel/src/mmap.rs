@@ -1,9 +1,9 @@
 use std::{
     ffi::c_void,
-    ptr::{self, NonNull},
+    ptr::{null_mut, NonNull},
 };
 
-use libc::{self, MAP_ANONYMOUS, MAP_HUGETLB, MAP_PRIVATE, PROT_READ, PROT_WRITE};
+use libc::{mmap, MAP_ANONYMOUS, MAP_FAILED, MAP_HUGETLB, MAP_PRIVATE, PROT_READ, PROT_WRITE};
 
 pub struct Mmap {
     address: NonNull<c_void>,
@@ -20,13 +20,12 @@ impl Drop for Mmap {
 }
 
 impl Mmap {
-    pub fn new(packet_size: usize, buffer_length: usize) -> Result<Self, MmapError> {
+    pub fn new(length: usize) -> Result<Self, MmapError> {
         let protection_mode = PROT_READ | PROT_WRITE;
         let flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB;
-        let length = packet_size * buffer_length;
 
-        let address = unsafe { libc::mmap(ptr::null_mut(), length, protection_mode, flags, -1, 0) };
-        if address == libc::MAP_FAILED {
+        let address = unsafe { mmap(null_mut(), length, protection_mode, flags, -1, 0) };
+        if address == MAP_FAILED {
             return Err(MmapError::Map(std::io::Error::last_os_error()));
         }
 
