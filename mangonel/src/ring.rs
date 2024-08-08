@@ -7,7 +7,7 @@ use crate::util::is_power_of_two;
 pub struct CompletionRing(NonNull<xsk_ring_cons>);
 
 impl CompletionRing {
-    pub fn new(size: u32) -> Result<Self, RingError> {
+    pub fn uninitialized(size: u32) -> Result<Self, RingError> {
         if !is_power_of_two(size) {
             return Err(RingError::Size(RingType::CompletionRing, size));
         }
@@ -27,7 +27,7 @@ impl CompletionRing {
 pub struct FillRing(NonNull<xsk_ring_prod>);
 
 impl FillRing {
-    pub fn new(size: u32) -> Result<Self, RingError> {
+    pub fn uninitialized(size: u32) -> Result<Self, RingError> {
         if !is_power_of_two(size) {
             return Err(RingError::Size(RingType::FillRing, size));
         }
@@ -47,7 +47,7 @@ impl FillRing {
 pub struct RxRing(NonNull<xsk_ring_cons>);
 
 impl RxRing {
-    pub fn new(size: u32) -> Result<Self, RingError> {
+    pub fn uninitialized(size: u32) -> Result<Self, RingError> {
         if !is_power_of_two(size) {
             return Err(RingError::Size(RingType::RxRing, size));
         }
@@ -67,7 +67,7 @@ impl RxRing {
 pub struct TxRing(NonNull<xsk_ring_prod>);
 
 impl TxRing {
-    pub fn new(size: u32) -> Result<Self, RingError> {
+    pub fn uninitialized(size: u32) -> Result<Self, RingError> {
         if !is_power_of_two(size) {
             return Err(RingError::Size(RingType::TxRing, size));
         }
