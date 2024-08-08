@@ -20,7 +20,7 @@ impl Drop for Mmap {
 }
 
 impl Mmap {
-    pub fn new(length: usize) -> Result<Self, MmapError> {
+    pub fn initialize(length: usize) -> Result<Self, MmapError> {
         let protection_mode = PROT_READ | PROT_WRITE;
         let flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB;
 

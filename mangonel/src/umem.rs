@@ -7,11 +7,10 @@ use crate::{
     ring::{CompletionRing, FillRing},
 };
 
-#[allow(unused)]
 pub struct Umem(NonNull<xsk_umem>);
 
 impl Umem {
-    pub fn new(
+    pub fn initialize(
         mmap: &Mmap,
         completion_ring: &CompletionRing,
         fill_ring: &FillRing,
