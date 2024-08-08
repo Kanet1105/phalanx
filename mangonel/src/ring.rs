@@ -9,7 +9,7 @@ pub struct CompletionRing(NonNull<xsk_ring_cons>);
 impl CompletionRing {
     pub fn uninitialized(size: u32) -> Result<Self, RingError> {
         if !is_power_of_two(size) {
-            return Err(RingError::Size(RingType::CompletionRing, size));
+            return Err(RingError(RingType::CompletionRing, size));
         }
 
         Ok(Self(NonNull::dangling()))
@@ -29,7 +29,7 @@ pub struct FillRing(NonNull<xsk_ring_prod>);
 impl FillRing {
     pub fn uninitialized(size: u32) -> Result<Self, RingError> {
         if !is_power_of_two(size) {
-            return Err(RingError::Size(RingType::FillRing, size));
+            return Err(RingError(RingType::FillRing, size));
         }
 
         Ok(Self(NonNull::dangling()))
@@ -49,7 +49,7 @@ pub struct RxRing(NonNull<xsk_ring_cons>);
 impl RxRing {
     pub fn uninitialized(size: u32) -> Result<Self, RingError> {
         if !is_power_of_two(size) {
-            return Err(RingError::Size(RingType::RxRing, size));
+            return Err(RingError(RingType::RxRing, size));
         }
 
         Ok(Self(NonNull::dangling()))
@@ -69,7 +69,7 @@ pub struct TxRing(NonNull<xsk_ring_prod>);
 impl TxRing {
     pub fn uninitialized(size: u32) -> Result<Self, RingError> {
         if !is_power_of_two(size) {
-            return Err(RingError::Size(RingType::TxRing, size));
+            return Err(RingError(RingType::TxRing, size));
         }
 
         Ok(Self(NonNull::dangling()))
@@ -102,19 +102,11 @@ impl std::fmt::Debug for RingType {
     }
 }
 
-pub enum RingError {
-    Size(RingType, u32),
-}
+pub struct RingError(RingType, u32);
 
 impl std::fmt::Debug for RingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Size(ring_type, ring_size) => write!(
-                f,
-                "{:?} size: {} is not the power of two",
-                ring_type, ring_size
-            ),
-        }
+        write!(f, "{:?} size: {} is not the power of two", self.0, self.1)
     }
 }
 
@@ -123,3 +115,5 @@ impl std::fmt::Display for RingError {
         write!(f, "{:?}", self)
     }
 }
+
+impl std::error::Error for RingError {}
