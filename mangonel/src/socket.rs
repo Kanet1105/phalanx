@@ -48,13 +48,16 @@ impl Default for SocketBuilder {
 }
 
 impl SocketBuilder {
-    pub fn build(self) -> Result<(RxSocket, TxSocket), SocketError> {
+    pub fn build(
+        self,
+        interface_name: impl AsRef<str>,
+        queue_id: u32,
+    ) -> Result<(RxSocket, TxSocket), SocketError> {
         let length = (self.frame_size + self.frame_headroom) * self.descriptor_count;
-        let mmap = Mmap::initialize(length as usize).map_err(SocketError::Mmap)?;
+        let mmap = Mmap::initialize(length as usize)?;
 
-        let completion_ring =
-            CompletionRing::uninitialized(self.completion_ring_size).map_err(SocketError::Ring)?;
-        let fill_ring = FillRing::uninitialized(self.fill_ring_size).map_err(SocketError::Ring)?;
+        let completion_ring = CompletionRing::uninitialized(self.completion_ring_size)?;
+        let fill_ring = FillRing::uninitialized(self.fill_ring_size)?;
 
         let umem = Umem::initialize(
             &mmap,
@@ -65,7 +68,19 @@ impl SocketBuilder {
         )
         .map_err(SocketError::Umem)?;
 
-        Socket::initialize(mmap, completion_ring, fill_ring, umem)
+        let rx_ring = RxRing::uninitialized(self.rx_ring_size)?;
+        let tx_ring = TxRing::uninitialized(self.tx_ring_size)?;
+
+        Socket::initialize(
+            mmap,
+            completion_ring,
+            fill_ring,
+            umem,
+            rx_ring,
+            tx_ring,
+            interface_name,
+            queue_id,
+        )
     }
 }
 
@@ -107,12 +122,48 @@ impl Socket {
         completion_ring: CompletionRing,
         fill_ring: FillRing,
         umem: Umem,
+        rx_ring: RxRing,
+        tx_ring: TxRing,
+        interface_name: impl AsRef<str>,
+        queue_id: u32,
     ) -> Result<(RxSocket, TxSocket), SocketError> {
+        let socket = NonNull::<xsk_socket>::dangling();
+        let interface_name =
+            CString::new(interface_name.as_ref()).map_err(SocketError::InterfaceName)?;
+        let socket_config = xsk_socket_config {
+            rx_size: rx_ring.size(),
+            tx_size: tx_ring.size(),
+            __bindgen_anon_1: xsk_socket_config__bindgen_ty_1 { libxdp_flags: 0 },
+            xdp_flags: XDP_SHARED_UMEM,
+            bind_flags: XDP_USE_NEED_WAKEUP,
+        };
+
+        let value = unsafe {
+            xsk_socket__create(
+                &mut socket.as_ptr(),
+                interface_name.as_ptr(),
+                queue_id,
+                umem.as_ptr(),
+                rx_ring.as_ptr(),
+                tx_ring.as_ptr(),
+                &socket_config,
+            )
+        };
+
+        if value.is_negative() {
+            return Err(SocketError::Initialize(std::io::Error::from_raw_os_error(
+                -value,
+            )));
+        }
+
         let inner = SocketInner {
             mmap,
             completion_ring,
             fill_ring,
             umem,
+            rx_ring,
+            tx_ring,
+            socket,
         };
 
         let rx_socket = RxSocket;
@@ -374,3 +425,21 @@ impl std::fmt::Display for SocketError {
 }
 
 impl std::error::Error for SocketError {}
+
+impl From<MmapError> for SocketError {
+    fn from(value: MmapError) -> Self {
+        Self::Mmap(value)
+    }
+}
+
+impl From<UmemError> for SocketError {
+    fn from(value: UmemError) -> Self {
+        Self::Umem(value)
+    }
+}
+
+impl From<RingError> for SocketError {
+    fn from(value: RingError) -> Self {
+        Self::Ring(value)
+    }
+}
