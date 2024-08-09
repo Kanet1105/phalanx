@@ -24,7 +24,7 @@ impl Umem {
             frame_headroom,
             flags: 0,
         };
-        let mut umem: NonNull<xsk_umem> = NonNull::dangling();
+        let umem: NonNull<xsk_umem> = NonNull::dangling();
 
         let value = unsafe {
             xsk_umem__create(
