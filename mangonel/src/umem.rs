@@ -38,9 +38,7 @@ impl Umem {
         };
 
         if value.is_negative() {
-            let error = std::io::Error::from_raw_os_error(-value);
-
-            return Err(UmemError::Initialize(error));
+            return Err(value.into());
         }
 
         Ok(Self(umem))
@@ -51,15 +49,11 @@ impl Umem {
     }
 }
 
-pub enum UmemError {
-    Initialize(std::io::Error),
-}
+pub struct UmemError(std::io::Error);
 
 impl std::fmt::Debug for UmemError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Initialize(error) => write!(f, "Failed to initialize Umem: {:?}", error),
-        }
+        write!(f, "Failed to initialize Umem: {:?}", self.0)
     }
 }
 
@@ -70,3 +64,9 @@ impl std::fmt::Display for UmemError {
 }
 
 impl std::error::Error for UmemError {}
+
+impl From<i32> for UmemError {
+    fn from(value: i32) -> Self {
+        Self(std::io::Error::from_raw_os_error(-value))
+    }
+}
