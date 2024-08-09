@@ -3,7 +3,9 @@ use std::{
     ptr::{null_mut, NonNull},
 };
 
-use libc::{mmap, MAP_ANONYMOUS, MAP_FAILED, MAP_HUGETLB, MAP_PRIVATE, PROT_READ, PROT_WRITE};
+use libc::{
+    mmap, munmap, MAP_ANONYMOUS, MAP_FAILED, MAP_HUGETLB, MAP_PRIVATE, PROT_READ, PROT_WRITE,
+};
 
 pub struct Mmap {
     address: NonNull<c_void>,
@@ -12,7 +14,8 @@ pub struct Mmap {
 
 impl Drop for Mmap {
     fn drop(&mut self) {
-        let value = unsafe { libc::munmap(self.as_ptr(), self.length()) };
+        let value = unsafe { munmap(self.as_ptr(), self.length()) };
+
         if value.is_negative() {
             panic!("{:?}", MmapError::Unmap(std::io::Error::last_os_error()));
         }
