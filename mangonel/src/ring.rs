@@ -1,6 +1,9 @@
 use std::{mem::MaybeUninit, ptr::NonNull};
 
-use mangonel_libxdp_sys::{xsk_ring_cons, xsk_ring_prod};
+use mangonel_libxdp_sys::{
+    xsk_ring_cons, xsk_ring_prod, xsk_ring_prod__fill_addr, xsk_ring_prod__reserve,
+    xsk_ring_prod__submit,
+};
 
 use crate::util::is_power_of_two;
 
@@ -109,6 +112,26 @@ impl FillRing {
 
     pub fn as_ptr(&self) -> *mut xsk_ring_prod {
         self.0.as_ptr()
+    }
+
+    pub fn populate(&self, frame_size: u32) -> Result<(), RingError> {
+        let mut index: u32 = 0;
+
+        let value = unsafe { xsk_ring_prod__reserve(self.as_ptr(), self.size, &mut index) };
+        if value != self.size {
+            return Err(RingError::Populate);
+        }
+
+        for i in 0..self.size {
+            index += 1;
+            unsafe {
+                *xsk_ring_prod__fill_addr(self.as_ptr(), index) = (i * frame_size) as u64;
+            }
+        }
+
+        unsafe { xsk_ring_prod__submit(self.as_ptr(), self.size) }
+
+        Ok(())
     }
 }
 
@@ -241,6 +264,7 @@ impl std::fmt::Debug for RingType {
 pub enum RingError {
     Size(RingType, u32),
     Initialize(RingType),
+    Populate,
 }
 
 impl std::fmt::Debug for RingError {
@@ -248,10 +272,11 @@ impl std::fmt::Debug for RingError {
         match self {
             Self::Size(ring_type, ring_size) => write!(
                 f,
-                "{:?} size: {} is not the power of two",
+                "{:?} size: {} is not the power of two.",
                 ring_type, ring_size
             ),
-            Self::Initialize(ring_type) => write!(f, "Failed to initialize {:?}", ring_type),
+            Self::Initialize(ring_type) => write!(f, "Failed to initialize {:?}.", ring_type),
+            Self::Populate => write!(f, "Failed to populate the fill ring."),
         }
     }
 }
