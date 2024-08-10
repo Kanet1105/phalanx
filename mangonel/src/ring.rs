@@ -28,8 +28,13 @@ impl CompletionRingUninit {
     }
 }
 
-#[derive(Debug)]
 pub struct CompletionRing(NonNull<xsk_ring_cons>);
+
+impl std::fmt::Debug for CompletionRing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", unsafe { self.0.as_ref() })
+    }
+}
 
 impl std::ops::Deref for CompletionRing {
     type Target = xsk_ring_cons;
@@ -79,6 +84,12 @@ impl FillRingUninit {
 
 pub struct FillRing(NonNull<xsk_ring_prod>);
 
+impl std::fmt::Debug for FillRing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", unsafe { self.0.as_ref() })
+    }
+}
+
 impl std::ops::Deref for FillRing {
     type Target = xsk_ring_prod;
 
@@ -127,6 +138,12 @@ impl RxRingUninit {
 
 pub struct RxRing(NonNull<xsk_ring_cons>);
 
+impl std::fmt::Debug for RxRing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", unsafe { self.0.as_ref() })
+    }
+}
+
 impl std::ops::Deref for RxRing {
     type Target = xsk_ring_cons;
 
@@ -174,6 +191,12 @@ impl TxRingUninit {
 }
 
 pub struct TxRing(NonNull<xsk_ring_prod>);
+
+impl std::fmt::Debug for TxRing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", unsafe { self.0.as_ref() })
+    }
+}
 
 impl std::ops::Deref for TxRing {
     type Target = xsk_ring_prod;
