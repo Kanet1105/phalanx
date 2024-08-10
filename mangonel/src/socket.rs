@@ -23,6 +23,7 @@ use crate::{
     umem::{Umem, UmemError},
 };
 
+#[derive(Debug)]
 pub struct SocketBuilder {
     pub frame_size: u32,
     pub frame_headroom: u32,
@@ -38,7 +39,7 @@ impl Default for SocketBuilder {
         Self {
             frame_size: XSK_UMEM__DEFAULT_FRAME_SIZE,
             frame_headroom: XSK_UMEM__DEFAULT_FRAME_HEADROOM,
-            descriptor_count: 8192,
+            descriptor_count: XSK_RING_CONS__DEFAULT_NUM_DESCS * 2,
             completion_ring_size: XSK_RING_CONS__DEFAULT_NUM_DESCS,
             fill_ring_size: XSK_RING_PROD__DEFAULT_NUM_DESCS,
             rx_ring_size: XSK_RING_CONS__DEFAULT_NUM_DESCS,
@@ -56,57 +57,42 @@ impl SocketBuilder {
         let length = (self.frame_size + self.frame_headroom) * self.descriptor_count;
         let mmap = Mmap::initialize(length as usize)?;
 
-        let completion_ring = CompletionRing::uninitialized(self.completion_ring_size)?;
-        let fill_ring = FillRing::uninitialized(self.fill_ring_size)?;
-
         let umem = Umem::initialize(
-            &mmap,
-            &completion_ring,
-            &fill_ring,
+            mmap,
+            self.completion_ring_size,
+            self.fill_ring_size,
             self.frame_size,
             self.frame_headroom,
         )
         .map_err(SocketError::Umem)?;
 
-        let rx_ring = RxRing::uninitialized(self.rx_ring_size)?;
-        let tx_ring = TxRing::uninitialized(self.tx_ring_size)?;
+        umem.fill_ring().populate(self.frame_size)?;
 
         Socket::initialize(
-            mmap,
-            completion_ring,
-            fill_ring,
             umem,
-            rx_ring,
-            tx_ring,
+            self.rx_ring_size,
+            self.tx_ring_size,
             interface_name,
             queue_id,
         )
     }
 }
 
-pub struct RxSocket;
-
-pub struct TxSocket;
-
 pub struct Socket {
     inner: Arc<SocketInner>,
 }
 
-struct SocketInner {
-    mmap: Mmap,
-    completion_ring: CompletionRing,
-    fill_ring: FillRing,
-    umem: Umem,
-    rx_ring: RxRing,
-    tx_ring: TxRing,
-    socket: NonNull<xsk_socket>,
-}
+struct SocketInner(NonNull<xsk_socket>);
 
 impl Drop for SocketInner {
     fn drop(&mut self) {
-        unsafe { xsk_socket__delete(self.socket.as_ptr()) }
+        unsafe { xsk_socket__delete(self.0.as_ptr()) }
     }
 }
+
+unsafe impl Send for Socket {}
+
+unsafe impl Sync for Socket {}
 
 impl Clone for Socket {
     fn clone(&self) -> Self {
@@ -118,294 +104,98 @@ impl Clone for Socket {
 
 impl Socket {
     pub fn initialize(
-        mmap: Mmap,
-        completion_ring: CompletionRing,
-        fill_ring: FillRing,
         umem: Umem,
-        rx_ring: RxRing,
-        tx_ring: TxRing,
+        rx_ring_size: u32,
+        tx_ring_size: u32,
         interface_name: impl AsRef<str>,
         queue_id: u32,
     ) -> Result<(RxSocket, TxSocket), SocketError> {
-        let socket = NonNull::<xsk_socket>::dangling();
+        let mut rx_ring = RxRing::uninitialized(rx_ring_size)?;
+        let mut tx_ring = TxRing::uninitialized(tx_ring_size)?;
         let interface_name =
             CString::new(interface_name.as_ref()).map_err(SocketError::InterfaceName)?;
         let socket_config = xsk_socket_config {
-            rx_size: rx_ring.size(),
-            tx_size: tx_ring.size(),
-            __bindgen_anon_1: xsk_socket_config__bindgen_ty_1 { libxdp_flags: 0 },
+            rx_size: rx_ring_size,
+            tx_size: tx_ring_size,
+            __bindgen_anon_1: xsk_socket_config__bindgen_ty_1 { libbpf_flags: 0 },
             xdp_flags: XDP_SHARED_UMEM,
             bind_flags: XDP_USE_NEED_WAKEUP,
         };
 
+        let mut socket = null_mut();
+
         let value = unsafe {
             xsk_socket__create(
-                &mut socket.as_ptr(),
+                &mut socket,
                 interface_name.as_ptr(),
                 queue_id,
                 umem.as_ptr(),
-                rx_ring.as_ptr(),
-                tx_ring.as_ptr(),
+                rx_ring.as_mut_ptr(),
+                tx_ring.as_mut_ptr(),
                 &socket_config,
             )
         };
-
         if value.is_negative() {
             return Err(SocketError::Initialize(std::io::Error::from_raw_os_error(
                 -value,
             )));
         }
 
-        let inner = SocketInner {
-            mmap,
-            completion_ring,
-            fill_ring,
-            umem,
-            rx_ring,
-            tx_ring,
-            socket,
+        let inner = SocketInner(NonNull::new(socket).unwrap());
+        let socket = Self {
+            inner: Arc::new(inner),
         };
 
-        let rx_socket = RxSocket;
-        let tx_socket = TxSocket;
+        let rx_socket = RxSocket::new(umem.clone(), socket.clone(), rx_ring.initialize()?);
+        let tx_socket = TxSocket::new(umem.clone(), socket.clone(), tx_ring.initialize()?);
 
         Ok((rx_socket, tx_socket))
     }
+
+    pub fn as_ptr(&self) -> *mut xsk_socket {
+        self.inner.0.as_ptr()
+    }
 }
 
-// impl Socket {
-//     pub fn new(
-//         packet_size: usize,
-//         buffer_length: usize,
-//         queue_id: u32,
-//         rx_ring_size: u32,
-//         tx_ring_size: u32,
-//         interface_name: impl AsRef<str>,
-//     ) -> Result<(Receiver, Sender), SocketError> { let mmap =
-//       Mmap::new(packet_size * buffer_length);
+pub struct RxSocket {
+    umem: Umem,
+    socket: Socket,
+    rx_ring: RxRing,
+}
 
-//         let completion_ring = CompletionRing::new(rx_ring_size);
-//         let
+impl RxSocket {
+    pub fn new(umem: Umem, socket: Socket, rx_ring: RxRing) -> Self {
+        Self {
+            umem,
+            socket,
+            rx_ring,
+        }
+    }
 
-//         let umem = Mmap::new();
-//         let umem = Umem::new(packet_size, buffer_length, rx_ring_size,
-// tx_ring_size).unwrap();
+    pub fn rx_burst(&mut self, buffer: &mut VecDeque<Packet>) -> u32 {
+        0
+    }
+}
 
-//         let socket_config = xsk_socket_config {
-//             rx_size: rx_ring_size,
-//             tx_size: tx_ring_size,
-//             __bindgen_anon_1: xsk_socket_config__bindgen_ty_1 { libbpf_flags:
-// 0 },             xdp_flags: XDP_SHARED_UMEM,
-//             bind_flags: XDP_USE_NEED_WAKEUP,
-//         };
+pub struct TxSocket {
+    umem: Umem,
+    socket: Socket,
+    tx_ring: TxRing,
+}
 
-//         let mut socket: *mut xsk_socket = null_mut();
+impl TxSocket {
+    pub fn new(umem: Umem, socket: Socket, tx_ring: TxRing) -> Self {
+        Self {
+            umem,
+            socket,
+            tx_ring,
+        }
+    }
 
-//         let interface_name =
-//
-// CString::new(interface_name.as_ref()).map_err(SocketError::InterfaceName)?;
-
-//         let mut rx_ring = MaybeUninit::<xsk_ring_cons>::zeroed();
-//         let mut tx_ring = MaybeUninit::<xsk_ring_prod>::zeroed();
-
-//         let value = unsafe {
-//             xsk_socket__create(
-//                 &mut socket,
-//                 interface_name.as_ptr(),
-//                 queue_id,
-//                 umem.as_ptr(),
-//                 rx_ring.as_mut_ptr(),
-//                 tx_ring.as_mut_ptr(),
-//                 &socket_config,
-//             )
-//         };
-
-//         if value.is_negative() {
-//             return
-// Err(SocketError::Initialize(std::io::Error::from_raw_os_error(
-// -value,             )));
-//         }
-
-//         let rx_ring = unsafe { rx_ring.assume_init() };
-//         let tx_ring = unsafe { tx_ring.assume_init() };
-
-//         let socket = Socket {
-//             inner: Arc::new(SocketInner {
-//                 umem,
-//                 socket:
-// NonNull::new(socket).ok_or(SocketError::SocketIsNull)?,             }),
-//         };
-
-//         let receiver = Receiver::new(rx_ring, socket.clone());
-//         let sender = Sender::new(tx_ring, socket.clone());
-
-//         Ok((receiver, sender))
-//     }
-
-//     pub fn as_ptr(&self) -> *mut xsk_socket {
-//         self.inner.socket.as_ptr()
-//     }
-
-//     pub fn umem(&self) -> &Umem {
-//         &self.inner.umem
-//     }
-// }
-
-// pub struct Receiver {
-//     rx_ring: xsk_ring_cons,
-//     socket: Socket,
-// }
-
-// unsafe impl Send for Receiver {}
-
-// impl Receiver {
-//     pub fn new(rx_ring: xsk_ring_cons, socket: Socket) -> Self {
-//         Self { socket, rx_ring }
-//     }
-
-//     pub fn rx_burst(&mut self, buffer: &mut VecDeque<Packet>) -> u32 {
-//         let mut index: u32 = 0;
-//         let burst_size = buffer.capacity() as u32;
-
-//         let received = unsafe { xsk_ring_cons__peek(&mut self.rx_ring,
-// burst_size, &mut index) };         if received == 0 {
-//             self.wakeup();
-
-//             return received;
-//         }
-
-//         for _ in 0..received {
-//             unsafe {
-//                 let descriptor = xsk_ring_cons__rx_desc(&mut self.rx_ring,
-// index);                 let address = (*descriptor).addr;
-//                 let length = (*descriptor).len;
-
-//                 let packet = Packet {
-//                     address,
-//                     length,
-//                     // data: std::slice::from_raw_parts_mut(
-//                     //     self.socket.umem().offset(address as isize) as
-// *mut u8,                     //     self.socket.umem().packet_size(),
-//                     // ),
-//                 };
-
-//                 buffer.push_back(packet);
-//                 index += 1;
-//             }
-//         }
-
-//         unsafe { xsk_ring_cons__release(&mut self.rx_ring, received) }
-
-//         received
-//     }
-
-//     fn wakeup(&self) {
-//         unsafe {
-//             let needs_wakeup =
-// xsk_ring_prod__needs_wakeup(self.socket.umem().fill_ring_as_ptr());
-//             if needs_wakeup > 0 {
-//                 let mut poll_fd = pollfd {
-//                     fd: xsk_socket__fd(self.socket.as_ptr()),
-//                     events: POLLIN,
-//                     revents: 0,
-//                 };
-
-//                 poll(&mut poll_fd, 1, 0);
-//             }
-//         }
-//     }
-// }
-
-// pub struct Sender {
-//     tx_ring: xsk_ring_prod,
-//     socket: Socket,
-// }
-
-// unsafe impl Send for Sender {}
-
-// impl Sender {
-//     pub fn new(tx_ring: xsk_ring_prod, socket: Socket) -> Self {
-//         Self { tx_ring, socket }
-//     }
-
-//     pub fn tx_burst(&mut self, buffer: &mut VecDeque<Packet>) -> Result<u32,
-// SocketError> {         let mut index: u32 = 0;
-//         let burst_size = buffer.len() as u32;
-
-//         let value = unsafe { xsk_ring_prod__reserve(&mut self.tx_ring,
-// burst_size, &mut index) };         if value != burst_size {
-//             for packet_index in 0..burst_size {
-//                 mem_
-//             }
-//         }
-//     }
-
-//     // fn complete_tx(&self) -> Result<(), SocketError> {
-//     //     let mut index: u32 = 0;
-//     //     self.kick_tx()?;
-
-//     //     let completed = unsafe {
-//     //         xsk_ring_cons__peek(
-//     //             self.socket.umem().completion_ring_as_ptr(),
-//     //             4096,
-//     //             &mut index,
-//     //         )
-//     //     };
-
-//     //     if completed > 0 {}
-
-//     //     Ok(0)
-//     // }
-
-//     fn kick_tx(&self) -> Result<(), SocketError> {
-//         let value = unsafe {
-//             sendto(
-//                 xsk_socket__fd(self.socket.as_ptr()),
-//                 null_mut(),
-//                 0,
-//                 MSG_DONTWAIT,
-//                 null_mut(),
-//                 0,
-//             )
-//         };
-
-//         if value.is_negative() {
-//             return Err(SocketError::KickTx(std::io::Error::from_raw_os_error(
-//                 -value as i32,
-//             )));
-//         }
-
-//         Ok(())
-//     }
-
-//     // pub fn tx_burst(&mut self, buffer: &mut VecDeque<Packet>) -> u32 {
-//     //     let mut index: u32 = 0;
-//     //     let batch_size = buffer.capacity() as u32;
-
-//     //     if batch_size == 0 {
-//     //         return 0;
-//     //     }
-
-//     //     let completed =
-//     //         unsafe { xsk_ring_prod__reserve(&mut self.tx_ring, batch_size,
-// &mut     // index) };     for _ in 0..available {
-//     //         let packet = buffer.pop_front().unwrap();
-
-//     //         unsafe {
-//     //             let descriptor = xsk_ring_prod__tx_desc(&mut self.tx_ring,
-//     // available);             (*descriptor).addr = packet.address;
-//     //             (*descriptor).len = packet.length;
-//     //             index += 1;
-//     //         }
-//     //     }
-
-//     //     if available > 0 {
-//     //         unsafe { xsk_ring_prod__submit(&mut self.tx_ring, available)
-// };     //     }
-
-//     //     return 0;
-//     // }
-// }
+    pub fn tx_burst(&mut self, buffer: &mut VecDeque<Packet>) -> u32 {
+        0
+    }
+}
 
 #[derive(Debug)]
 pub enum SocketError {
