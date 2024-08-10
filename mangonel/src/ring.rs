@@ -1,86 +1,199 @@
-use std::ptr::NonNull;
+use std::{mem::MaybeUninit, ptr::NonNull};
 
 use mangonel_libxdp_sys::{xsk_ring_cons, xsk_ring_prod};
 
 use crate::util::is_power_of_two;
 
-pub struct CompletionRing(NonNull<xsk_ring_cons>);
+pub struct CompletionRingUninit(MaybeUninit<xsk_ring_cons>);
 
-impl CompletionRing {
-    pub fn uninitialized(size: u32) -> Result<Self, RingError> {
-        if !is_power_of_two(size) {
-            return Err(RingError(RingType::CompletionRing, size));
-        }
-
-        Ok(Self(NonNull::dangling()))
+impl CompletionRingUninit {
+    fn new() -> Self {
+        Self(MaybeUninit::<xsk_ring_cons>::uninit())
     }
 
-    pub fn as_ptr(&self) -> *mut xsk_ring_cons {
+    pub fn as_mut_ptr(&mut self) -> *mut xsk_ring_cons {
+        self.0.as_mut_ptr()
+    }
+
+    pub fn as_ptr(&self) -> *const xsk_ring_cons {
         self.0.as_ptr()
     }
 
-    pub fn size(&self) -> u32 {
-        unsafe { self.0.as_ref().size }
+    pub fn initialize(self) -> Result<CompletionRing, RingError> {
+        let ring_boxed: Box<xsk_ring_cons> = unsafe { self.0.assume_init().into() };
+        let ring_ptr = Box::into_raw(ring_boxed);
+        let ring = NonNull::new(ring_ptr).ok_or(RingError::Initialize(RingType::CompletionRing))?;
+
+        Ok(CompletionRing(ring))
+    }
+}
+
+#[derive(Debug)]
+pub struct CompletionRing(NonNull<xsk_ring_cons>);
+
+impl std::ops::Deref for CompletionRing {
+    type Target = xsk_ring_cons;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.0.as_ref() }
+    }
+}
+
+impl CompletionRing {
+    pub fn uninitialized(size: u32) -> Result<CompletionRingUninit, RingError> {
+        if !is_power_of_two(size) {
+            return Err(RingError::Size(RingType::CompletionRing, size));
+        }
+
+        Ok(CompletionRingUninit::new())
+    }
+
+    pub fn as_ptr(&mut self) -> *mut xsk_ring_cons {
+        self.0.as_ptr()
+    }
+}
+
+pub struct FillRingUninit(MaybeUninit<xsk_ring_prod>);
+
+impl FillRingUninit {
+    fn new() -> Self {
+        Self(MaybeUninit::<xsk_ring_prod>::uninit())
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut xsk_ring_prod {
+        self.0.as_mut_ptr()
+    }
+
+    pub fn as_ptr(&self) -> *const xsk_ring_prod {
+        self.0.as_ptr()
+    }
+
+    pub fn initialize(self) -> Result<FillRing, RingError> {
+        let ring_boxed: Box<xsk_ring_prod> = unsafe { self.0.assume_init().into() };
+        let ring_ptr = Box::into_raw(ring_boxed);
+        let ring = NonNull::new(ring_ptr).ok_or(RingError::Initialize(RingType::FillRing))?;
+
+        Ok(FillRing(ring))
     }
 }
 
 pub struct FillRing(NonNull<xsk_ring_prod>);
 
+impl std::ops::Deref for FillRing {
+    type Target = xsk_ring_prod;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.0.as_ref() }
+    }
+}
+
 impl FillRing {
-    pub fn uninitialized(size: u32) -> Result<Self, RingError> {
+    pub fn uninitialized(size: u32) -> Result<FillRingUninit, RingError> {
         if !is_power_of_two(size) {
-            return Err(RingError(RingType::FillRing, size));
+            return Err(RingError::Size(RingType::FillRing, size));
         }
 
-        Ok(Self(NonNull::dangling()))
+        Ok(FillRingUninit::new())
     }
 
     pub fn as_ptr(&self) -> *mut xsk_ring_prod {
         self.0.as_ptr()
     }
+}
 
-    pub fn size(&self) -> u32 {
-        unsafe { self.0.as_ref().size }
+pub struct RxRingUninit(MaybeUninit<xsk_ring_cons>);
+
+impl RxRingUninit {
+    fn new() -> Self {
+        Self(MaybeUninit::<xsk_ring_cons>::uninit())
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut xsk_ring_cons {
+        self.0.as_mut_ptr()
+    }
+
+    pub fn as_ptr(&self) -> *const xsk_ring_cons {
+        self.0.as_ptr()
+    }
+
+    pub fn initialize(self) -> Result<RxRing, RingError> {
+        let ring_boxed: Box<xsk_ring_cons> = unsafe { self.0.assume_init().into() };
+        let ring_ptr = Box::into_raw(ring_boxed);
+        let ring = NonNull::new(ring_ptr).ok_or(RingError::Initialize(RingType::RxRing))?;
+
+        Ok(RxRing(ring))
     }
 }
 
 pub struct RxRing(NonNull<xsk_ring_cons>);
 
+impl std::ops::Deref for RxRing {
+    type Target = xsk_ring_cons;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.0.as_ref() }
+    }
+}
+
 impl RxRing {
-    pub fn uninitialized(size: u32) -> Result<Self, RingError> {
+    pub fn uninitialized(size: u32) -> Result<RxRingUninit, RingError> {
         if !is_power_of_two(size) {
-            return Err(RingError(RingType::RxRing, size));
+            return Err(RingError::Size(RingType::RxRing, size));
         }
 
-        Ok(Self(NonNull::dangling()))
+        Ok(RxRingUninit::new())
     }
 
     pub fn as_ptr(&self) -> *mut xsk_ring_cons {
         self.0.as_ptr()
     }
+}
 
-    pub fn size(&self) -> u32 {
-        unsafe { self.0.as_ref().size }
+pub struct TxRingUninit(MaybeUninit<xsk_ring_prod>);
+
+impl TxRingUninit {
+    fn new() -> Self {
+        Self(MaybeUninit::<xsk_ring_prod>::uninit())
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut xsk_ring_prod {
+        self.0.as_mut_ptr()
+    }
+
+    pub fn as_ptr(&self) -> *const xsk_ring_prod {
+        self.0.as_ptr()
+    }
+
+    pub fn initialize(self) -> Result<TxRing, RingError> {
+        let ring_boxed: Box<xsk_ring_prod> = unsafe { self.0.assume_init().into() };
+        let ring_ptr = Box::into_raw(ring_boxed);
+        let ring = NonNull::new(ring_ptr).ok_or(RingError::Initialize(RingType::TxRing))?;
+
+        Ok(TxRing(ring))
     }
 }
 
 pub struct TxRing(NonNull<xsk_ring_prod>);
 
+impl std::ops::Deref for TxRing {
+    type Target = xsk_ring_prod;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.0.as_ref() }
+    }
+}
+
 impl TxRing {
-    pub fn uninitialized(size: u32) -> Result<Self, RingError> {
+    pub fn uninitialized(size: u32) -> Result<TxRingUninit, RingError> {
         if !is_power_of_two(size) {
-            return Err(RingError(RingType::TxRing, size));
+            return Err(RingError::Size(RingType::TxRing, size));
         }
 
-        Ok(Self(NonNull::dangling()))
+        Ok(TxRingUninit::new())
     }
 
     pub fn as_ptr(&self) -> *mut xsk_ring_prod {
         self.0.as_ptr()
-    }
-
-    pub fn size(&self) -> u32 {
-        unsafe { self.0.as_ref().size }
     }
 }
 
@@ -102,11 +215,21 @@ impl std::fmt::Debug for RingType {
     }
 }
 
-pub struct RingError(RingType, u32);
+pub enum RingError {
+    Size(RingType, u32),
+    Initialize(RingType),
+}
 
 impl std::fmt::Debug for RingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} size: {} is not the power of two", self.0, self.1)
+        match self {
+            Self::Size(ring_type, ring_size) => write!(
+                f,
+                "{:?} size: {} is not the power of two",
+                ring_type, ring_size
+            ),
+            Self::Initialize(ring_type) => write!(f, "Failed to initialize {:?}", ring_type),
+        }
     }
 }
 
