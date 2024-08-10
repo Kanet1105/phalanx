@@ -56,7 +56,6 @@ impl Umem {
     ) -> Result<Self, UmemError> {
         let mut completion_ring = CompletionRing::uninitialized(fill_ring_size)?;
         let mut fill_ring = FillRing::uninitialized(fill_ring_size)?;
-
         let umem_config = xsk_umem_config {
             fill_size: fill_ring_size,
             comp_size: completion_ring_size,
@@ -64,7 +63,6 @@ impl Umem {
             frame_headroom,
             flags: 0,
         };
-
         let mut umem_ptr = null_mut();
 
         let value = unsafe {
