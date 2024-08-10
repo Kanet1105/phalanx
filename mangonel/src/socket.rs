@@ -117,7 +117,6 @@ impl Socket {
             xdp_flags: XDP_SHARED_UMEM,
             bind_flags: XDP_USE_NEED_WAKEUP,
         };
-
         let mut socket = null_mut();
 
         let value = unsafe {
@@ -141,7 +140,6 @@ impl Socket {
         let socket = Self {
             inner: Arc::new(inner),
         };
-
         let rx_socket = RxSocket::new(umem.clone(), socket.clone(), rx_ring.initialize()?);
         let tx_socket = TxSocket::new(umem.clone(), socket.clone(), tx_ring.initialize()?);
 
