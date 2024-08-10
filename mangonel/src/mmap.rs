@@ -15,7 +15,6 @@ pub struct Mmap {
 impl Drop for Mmap {
     fn drop(&mut self) {
         let value = unsafe { munmap(self.as_ptr(), self.length()) };
-
         if value.is_negative() {
             panic!("{:?}", MmapError::Unmap(std::io::Error::last_os_error()));
         }
