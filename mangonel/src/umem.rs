@@ -24,7 +24,6 @@ struct UmemInner {
 impl Drop for UmemInner {
     fn drop(&mut self) {
         let value = unsafe { xsk_umem__delete(self.umem.as_ptr()) };
-
         if value.is_negative() {
             panic!(
                 "{:?}",
