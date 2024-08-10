@@ -1,25 +1,22 @@
 use std::{
     collections::VecDeque,
     ffi::{CString, NulError},
-    mem::MaybeUninit,
     ptr::{null_mut, NonNull},
     sync::Arc,
 };
 
 use libc::{poll, pollfd, sendto, MSG_DONTWAIT, POLLIN, XDP_USE_NEED_WAKEUP};
 use mangonel_libxdp_sys::{
-    xsk_ring_cons, xsk_ring_cons__peek, xsk_ring_cons__release, xsk_ring_cons__rx_desc,
-    xsk_ring_prod, xsk_ring_prod__needs_wakeup, xsk_ring_prod__reserve, xsk_ring_prod__submit,
-    xsk_ring_prod__tx_desc, xsk_socket, xsk_socket__create, xsk_socket__delete, xsk_socket__fd,
-    xsk_socket_config, xsk_socket_config__bindgen_ty_1, XDP_SHARED_UMEM,
-    XSK_RING_CONS__DEFAULT_NUM_DESCS, XSK_RING_PROD__DEFAULT_NUM_DESCS,
-    XSK_UMEM__DEFAULT_FRAME_HEADROOM, XSK_UMEM__DEFAULT_FRAME_SHIFT, XSK_UMEM__DEFAULT_FRAME_SIZE,
+    xsk_socket, xsk_socket__create, xsk_socket__delete, xsk_socket__fd, xsk_socket_config,
+    xsk_socket_config__bindgen_ty_1, XDP_SHARED_UMEM, XSK_RING_CONS__DEFAULT_NUM_DESCS,
+    XSK_RING_PROD__DEFAULT_NUM_DESCS, XSK_UMEM__DEFAULT_FRAME_HEADROOM,
+    XSK_UMEM__DEFAULT_FRAME_SIZE,
 };
 
 use crate::{
     mmap::{Mmap, MmapError},
     packet::Packet,
-    ring::{CompletionRing, FillRing, RingError, RxRing, TxRing},
+    ring::{RingError, RxRing, TxRing},
     umem::{Umem, UmemError},
 };
 
@@ -65,7 +62,6 @@ impl SocketBuilder {
             self.frame_headroom,
         )
         .map_err(SocketError::Umem)?;
-
         umem.fill_ring().populate(self.frame_size)?;
 
         Socket::initialize(
@@ -154,6 +150,10 @@ impl Socket {
 
     pub fn as_ptr(&self) -> *mut xsk_socket {
         self.inner.0.as_ptr()
+    }
+
+    pub fn socket_fd(&self) -> i32 {
+        unsafe { xsk_socket__fd(self.as_ptr()) }
     }
 }
 
