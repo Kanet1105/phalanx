@@ -15,7 +15,6 @@ pub fn setrlimit() {
 
         libc::setrlimit(libc::RLIMIT_MEMLOCK, &rlimit)
     };
-
     if value.is_negative() {
         panic!("{}", std::io::Error::from_raw_os_error(-value));
     }

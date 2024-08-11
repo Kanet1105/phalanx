@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use libc::{poll, pollfd, sendto, MSG_DONTWAIT, POLLIN, XDP_USE_NEED_WAKEUP};
+use libc::{poll, pollfd, recvfrom, sendto, MSG_DONTWAIT, POLLIN, XDP_USE_NEED_WAKEUP};
 use mangonel_libxdp_sys::{
     xsk_socket, xsk_socket__create, xsk_socket__delete, xsk_socket__fd, xsk_socket_config,
     xsk_socket_config__bindgen_ty_1, XDP_SHARED_UMEM, XSK_RING_CONS__DEFAULT_NUM_DESCS,
@@ -170,7 +170,37 @@ impl RxSocket {
         }
     }
 
+    pub fn as_ptr(&self) -> *mut xsk_socket {
+        self.socket.as_ptr()
+    }
+
+    pub fn socket_fd(&self) -> i32 {
+        unsafe { xsk_socket__fd(self.as_ptr()) }
+    }
+
     pub fn rx_burst(&mut self, buffer: &mut VecDeque<Packet>) -> u32 {
+        let burst_size = buffer.capacity() as u32;
+        let mut index: u32 = 0;
+
+        let received = self.rx_ring.peek(burst_size, &mut index);
+        if received == 0 {
+            if self.umem.fill_ring().needs_wakeup() {
+                unsafe {
+                    recvfrom(
+                        self.socket_fd(),
+                        null_mut(),
+                        0,
+                        MSG_DONTWAIT,
+                        null_mut(),
+                        null_mut(),
+                    )
+                };
+            }
+
+            return received;
+        }
+
+        for i in 0..received {}
         0
     }
 }
@@ -188,6 +218,14 @@ impl TxSocket {
             socket,
             tx_ring,
         }
+    }
+
+    pub fn as_ptr(&self) -> *mut xsk_socket {
+        self.socket.as_ptr()
+    }
+
+    pub fn socket_fd(&self) -> i32 {
+        unsafe { xsk_socket__fd(self.as_ptr()) }
     }
 
     pub fn tx_burst(&mut self, buffer: &mut VecDeque<Packet>) -> u32 {

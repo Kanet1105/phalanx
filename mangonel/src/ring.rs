@@ -1,8 +1,8 @@
 use std::{mem::MaybeUninit, ptr::NonNull};
 
 use mangonel_libxdp_sys::{
-    xsk_ring_cons, xsk_ring_prod, xsk_ring_prod__fill_addr, xsk_ring_prod__reserve,
-    xsk_ring_prod__submit,
+    xsk_ring_cons, xsk_ring_cons__peek, xsk_ring_prod, xsk_ring_prod__fill_addr,
+    xsk_ring_prod__needs_wakeup, xsk_ring_prod__reserve, xsk_ring_prod__submit,
 };
 
 use crate::util::is_power_of_two;
@@ -133,6 +133,14 @@ impl FillRing {
 
         Ok(())
     }
+
+    pub fn needs_wakeup(&self) -> bool {
+        let value = unsafe { xsk_ring_prod__needs_wakeup(self.as_ptr()) };
+        match value {
+            0 => false,
+            _other_values => true,
+        }
+    }
 }
 
 pub struct RxRingUninit(MaybeUninit<xsk_ring_cons>);
@@ -187,6 +195,12 @@ impl RxRing {
     pub fn as_ptr(&self) -> *mut xsk_ring_cons {
         self.0.as_ptr()
     }
+
+    pub fn peek(&self, batch_size: u32, index: &mut u32) -> u32 {
+        unsafe { xsk_ring_cons__peek(self.as_ptr(), batch_size, index) }
+    }
+
+    pub fn rx_descriptor() {}
 }
 
 pub struct TxRingUninit(MaybeUninit<xsk_ring_prod>);
