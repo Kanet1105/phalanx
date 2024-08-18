@@ -12,6 +12,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrayvec"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
+
+[[package]]
 name = "bindgen"
 version = "0.69.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -150,13 +156,7 @@ checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
 name = "mangonel"
 version = "0.1.0"
 dependencies = [
- "mangonel-core",
-]
-
-[[package]]
-name = "mangonel-core"
-version = "0.1.0"
-dependencies = [
+ "arrayvec",
  "libc",
  "mangonel-libxdp-sys",
 ]
