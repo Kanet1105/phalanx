@@ -22,9 +22,12 @@ impl Drop for Mmap {
 }
 
 impl Mmap {
-    pub fn initialize(length: usize) -> Result<Self, MmapError> {
+    pub fn initialize(length: usize, hugetlb: bool) -> Result<Self, MmapError> {
         let protection_mode = PROT_READ | PROT_WRITE;
-        let flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB;
+        let mut flags = MAP_PRIVATE | MAP_ANONYMOUS;
+        if hugetlb {
+            flags |= MAP_HUGETLB;
+        }
 
         let address = unsafe { mmap(null_mut(), length, protection_mode, flags, -1, 0) };
         if address == MAP_FAILED {
