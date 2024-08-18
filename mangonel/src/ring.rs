@@ -252,6 +252,7 @@ pub struct RxRing(ConsumerRing);
 impl std::ops::Deref for RxRing {
     type Target = ConsumerRing;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -274,6 +275,7 @@ pub struct TxRing(ProducerRing);
 impl std::ops::Deref for TxRing {
     type Target = ProducerRing;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.0
     }
