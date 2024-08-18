@@ -1,14 +1,49 @@
-use std::{collections::VecDeque, thread, time::Duration};
+use std::{
+    collections::VecDeque,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    thread,
+    time::Duration,
+};
 
-use mangonel::socket::SocketBuilder;
+use arraydeque::{ArrayDeque, Wrapping};
+use mangonel::{mmap::Mmap, packet::Frame, socket::SocketBuilder, umem::Umem, util::setrlimit};
 
 fn main() {
+    let running = Arc::new(AtomicBool::new(true));
+    ctrlc::set_handler({
+        let running = running.clone();
+        move || {
+            running.store(false, Ordering::SeqCst);
+        }
+    })
+    .unwrap();
+
+    setrlimit();
+
+    let config = SocketBuilder::default();
+    let mmap = Mmap::initialize(
+        config.frame_size,
+        config.frame_headroom_size,
+        config.descriptor_count,
+        false,
+    )
+    .unwrap();
+    let mut buffer = mmap.initialize_descriptor_buffer();
+    println!("{}", buffer.len());
+
+    let umem = Umem::initialize(config.completion_ring_size, config.fill_ring_size, &mmap).unwrap();
+    umem.fill_ring().fill(&mut buffer).unwrap();
+    println!("{}", buffer.len());
+
     let interface_name = "enp5s0";
+    let queue_id = 0;
+    let (mut receiver, mut _sender) = config.build(interface_name, queue_id, &umem).unwrap();
+    let mut receive_buffer: ArrayDeque<Frame, 128, Wrapping> = ArrayDeque::new();
 
-    let socket = SocketBuilder::default();
-    println!("{:?}", socket);
-
-    let socket = socket.build(interface_name, 0).unwrap();
-
-    loop {}
+    while running.load(Ordering::SeqCst) {
+        receiver.rx_burst(&mut receive_buffer, &mmap);
+    }
 }

@@ -1,11 +1,12 @@
 use std::{mem::MaybeUninit, ptr::NonNull};
 
 use mangonel_libxdp_sys::{
-    xsk_ring_cons, xsk_ring_cons__peek, xsk_ring_prod, xsk_ring_prod__fill_addr,
-    xsk_ring_prod__needs_wakeup, xsk_ring_prod__reserve, xsk_ring_prod__submit,
+    xdp_desc, xsk_ring_cons, xsk_ring_cons__peek, xsk_ring_cons__release, xsk_ring_cons__rx_desc,
+    xsk_ring_prod, xsk_ring_prod__fill_addr, xsk_ring_prod__needs_wakeup, xsk_ring_prod__reserve,
+    xsk_ring_prod__submit,
 };
 
-use crate::util::is_power_of_two;
+use crate::{packet::Frame, util::is_power_of_two};
 
 pub struct CompletionRingUninit(MaybeUninit<xsk_ring_cons>);
 
@@ -56,8 +57,16 @@ impl CompletionRing {
         Ok(CompletionRingUninit::new())
     }
 
-    pub fn as_ptr(&mut self) -> *mut xsk_ring_cons {
+    pub fn as_ptr(&self) -> *mut xsk_ring_cons {
         self.0.as_ptr()
+    }
+
+    pub fn peek(&self, index: &mut u32) -> u32 {
+        unsafe { xsk_ring_cons__peek(self.as_ptr(), self.size, index) }
+    }
+
+    pub fn release(&self, descriptor_count: u32) {
+        unsafe { xsk_ring_cons__release(self.as_ptr(), descriptor_count) }
     }
 }
 
@@ -114,18 +123,21 @@ impl FillRing {
         self.0.as_ptr()
     }
 
-    pub fn populate(&self, frame_size: u32) -> Result<(), RingError> {
+    pub fn fill(&self, buffer: &mut Vec<Frame>) -> Result<(), RingError> {
         let mut index: u32 = 0;
+        let buffer_size = buffer.len() as u32;
 
-        let value = unsafe { xsk_ring_prod__reserve(self.as_ptr(), self.size, &mut index) };
-        if value != self.size {
-            return Err(RingError::Populate);
-        }
+        let available = unsafe { xsk_ring_prod__reserve(self.as_ptr(), buffer_size, &mut index) };
+        for _ in 0..available {
+            let frame = buffer.pop().expect("Empty frame buffer..");
 
-        for i in 0..self.size {
-            index += 1;
             unsafe {
-                *xsk_ring_prod__fill_addr(self.as_ptr(), index) = (i * frame_size) as u64;
+                // *xsk_ring_prod__fill_addr(self.as_ptr(), index) = (i *
+                // frame_size) as u64;
+                let address = xsk_ring_prod__fill_addr(self.as_ptr(), index);
+                index += 1;
+
+                *address = frame.address;
             }
         }
 
@@ -169,6 +181,10 @@ impl RxRingUninit {
 
 pub struct RxRing(NonNull<xsk_ring_cons>);
 
+unsafe impl Send for RxRing {}
+
+unsafe impl Sync for RxRing {}
+
 impl std::fmt::Debug for RxRing {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", unsafe { self.0.as_ref() })
@@ -200,7 +216,13 @@ impl RxRing {
         unsafe { xsk_ring_cons__peek(self.as_ptr(), batch_size, index) }
     }
 
-    pub fn rx_descriptor() {}
+    pub fn rx_descriptor(&self, index: u32) -> *const xdp_desc {
+        unsafe { xsk_ring_cons__rx_desc(self.as_ptr(), index) }
+    }
+
+    pub fn release(&self, descriptor_count: u32) {
+        unsafe { xsk_ring_cons__release(self.as_ptr(), descriptor_count) }
+    }
 }
 
 pub struct TxRingUninit(MaybeUninit<xsk_ring_prod>);
@@ -228,6 +250,10 @@ impl TxRingUninit {
 }
 
 pub struct TxRing(NonNull<xsk_ring_prod>);
+
+unsafe impl Send for TxRing {}
+
+unsafe impl Sync for TxRing {}
 
 impl std::fmt::Debug for TxRing {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

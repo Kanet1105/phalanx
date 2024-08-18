@@ -15,7 +15,6 @@ pub struct Umem {
 }
 
 struct UmemInner {
-    mmap: Mmap,
     completion_ring: CompletionRing,
     fill_ring: FillRing,
     umem: NonNull<xsk_umem>,
@@ -47,19 +46,17 @@ impl Clone for Umem {
 
 impl Umem {
     pub fn initialize(
-        mmap: Mmap,
         completion_ring_size: u32,
         fill_ring_size: u32,
-        frame_size: u32,
-        frame_headroom: u32,
+        mmap: &Mmap,
     ) -> Result<Self, UmemError> {
         let mut completion_ring = CompletionRing::uninitialized(fill_ring_size)?;
         let mut fill_ring = FillRing::uninitialized(fill_ring_size)?;
         let umem_config = xsk_umem_config {
             fill_size: fill_ring_size,
             comp_size: completion_ring_size,
-            frame_size,
-            frame_headroom,
+            frame_size: mmap.frame_size(),
+            frame_headroom: mmap.frame_headroom_size(),
             flags: 0,
         };
         let mut umem_ptr = null_mut();
@@ -81,7 +78,6 @@ impl Umem {
         }
 
         let umem_inner = UmemInner {
-            mmap,
             completion_ring: completion_ring.initialize()?,
             fill_ring: fill_ring.initialize()?,
             umem: NonNull::new(umem_ptr).unwrap(),
@@ -90,10 +86,6 @@ impl Umem {
         Ok(Self {
             inner: Arc::new(umem_inner),
         })
-    }
-
-    pub fn mmap(&self) -> &Mmap {
-        &self.inner.mmap
     }
 
     pub fn completion_ring(&self) -> &CompletionRing {
