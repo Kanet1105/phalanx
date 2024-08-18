@@ -23,7 +23,8 @@ fn main() {
 
     setrlimit();
 
-    let config = SocketBuilder::default();
+    let mut config = SocketBuilder::default();
+    config.fill_ring_size = 64;
     let mmap = Mmap::initialize(
         config.frame_size,
         config.frame_headroom_size,
@@ -32,18 +33,19 @@ fn main() {
     )
     .unwrap();
     let mut buffer = mmap.initialize_descriptor_buffer();
-    println!("{}", buffer.len());
-
     let umem = Umem::initialize(config.completion_ring_size, config.fill_ring_size, &mmap).unwrap();
     umem.fill_ring().fill(&mut buffer).unwrap();
-    println!("{}", buffer.len());
 
     let interface_name = "enp5s0";
     let queue_id = 0;
     let (mut receiver, mut _sender) = config.build(interface_name, queue_id, &umem).unwrap();
     let mut receive_buffer: ArrayDeque<Frame, 128, Wrapping> = ArrayDeque::new();
 
+    let mut cnt = 0;
     while running.load(Ordering::SeqCst) {
-        receiver.rx_burst(&mut receive_buffer, &mmap);
+        let n = receiver.rx_burst(&mut receive_buffer, &mmap);
+        if n > 0 {
+            // println!("{:?}", receiver.rx_ring());
+        }
     }
 }

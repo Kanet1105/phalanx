@@ -201,6 +201,10 @@ impl RxSocket {
         unsafe { xsk_socket__fd(self.as_ptr()) }
     }
 
+    pub fn rx_ring(&self) -> &RxRing {
+        &self.rx_ring
+    }
+
     pub fn rx_burst(&mut self, buffer: &mut ArrayDeque<Frame, 128, Wrapping>, mmap: &Mmap) -> u32 {
         let burst_size = buffer.capacity() as u32;
         let mut index: u32 = 0;
