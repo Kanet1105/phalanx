@@ -10,6 +10,12 @@ use crate::util::is_power_of_two;
 
 pub struct ConsumerRing(NonNull<xsk_ring_cons>);
 
+impl std::fmt::Debug for ConsumerRing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", unsafe { self.0.as_ref() })
+    }
+}
+
 impl From<xsk_ring_cons> for ConsumerRing {
     /// # Safety
     ///
@@ -51,6 +57,12 @@ impl ConsumerRing {
 }
 
 pub struct ProducerRing(NonNull<xsk_ring_prod>);
+
+impl std::fmt::Debug for ProducerRing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", unsafe { self.0.as_ref() })
+    }
+}
 
 impl From<xsk_ring_prod> for ProducerRing {
     /// # Safety
@@ -203,6 +215,12 @@ impl TxRingUninit {
 
 pub struct CompletionRing(ConsumerRing);
 
+impl std::fmt::Debug for CompletionRing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
+
 impl std::ops::Deref for CompletionRing {
     type Target = ConsumerRing;
 
@@ -225,6 +243,12 @@ impl CompletionRing {
 }
 
 pub struct FillRing(ProducerRing);
+
+impl std::fmt::Debug for FillRing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
 
 impl std::ops::Deref for FillRing {
     type Target = ProducerRing;
