@@ -24,7 +24,7 @@ fn main() {
     setrlimit();
 
     let mut config = SocketBuilder::default();
-    config.fill_ring_size = 64;
+    config.fill_ring_size = 4096;
     let mmap = Mmap::initialize(
         config.frame_size,
         config.frame_headroom_size,
@@ -41,7 +41,6 @@ fn main() {
     let (mut receiver, mut _sender) = config.build(interface_name, queue_id, &umem).unwrap();
     let mut receive_buffer: ArrayDeque<Frame, 128, Wrapping> = ArrayDeque::new();
 
-    let mut cnt = 0;
     while running.load(Ordering::SeqCst) {
         let n = receiver.rx_burst(&mut receive_buffer, &mmap);
         if n > 0 {
