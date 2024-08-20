@@ -29,14 +29,7 @@ impl Mmap {
         descriptor_count: u32,
         hugetlb: bool,
     ) -> Result<Self, MmapError> {
-        let frame_size = frame_size
-            .checked_add(headroom_size)
-            .ok_or(MmapError::InvalidFrameSize(frame_size, headroom_size))?;
-        let length = frame_size
-            .checked_mul(descriptor_count)
-            .ok_or(MmapError::InvalidLength(frame_size, descriptor_count))?
-            as usize;
-
+        let length = ((frame_size + headroom_size) * descriptor_count) as usize;
         let protection_mode = PROT_READ | PROT_WRITE;
         let mut flags = MAP_PRIVATE | MAP_ANONYMOUS;
         if hugetlb {
@@ -71,8 +64,6 @@ impl Mmap {
 }
 
 pub enum MmapError {
-    InvalidFrameSize(u32, u32),
-    InvalidLength(u32, u32),
     Initialize(std::io::Error),
     MmapIsNull,
     Free(std::io::Error),
@@ -81,19 +72,9 @@ pub enum MmapError {
 impl std::fmt::Debug for MmapError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidFrameSize(frame_size, headroom_size) => write!(
-                f,
-                "frame size ({}) + headroom size ({}) exceeds u32::MAX.",
-                frame_size, headroom_size
-            ),
-            Self::InvalidLength(frame_size, descriptor_count) => write!(
-                f,
-                "frame size ({}) * descriptor count ({}) exceeds u32::MAX.",
-                frame_size, descriptor_count
-            ),
             Self::Initialize(error) => write!(f, "Failed to initialize `Mmap`: {:?}", error),
             Self::MmapIsNull => write!(f, "Mmap address is null"),
-            Self::Free(error) => write!(f, ""),
+            Self::Free(error) => write!(f, "Failed to free `Mmap`: {:?}", error),
         }
     }
 }
