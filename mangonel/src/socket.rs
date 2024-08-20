@@ -1,89 +1,95 @@
 use std::{
-    collections::VecDeque,
     ffi::{CString, NulError},
     ptr::{null_mut, NonNull},
     sync::Arc,
 };
 
-use arraydeque::{ArrayDeque, Wrapping};
-use libc::{poll, pollfd, sendto, MSG_DONTWAIT, POLLIN, XDP_USE_NEED_WAKEUP};
+use libc::{poll, pollfd, sendto, MSG_DONTWAIT, POLLIN};
 use mangonel_libxdp_sys::{
-    xdp_desc, xsk_socket, xsk_socket__create, xsk_socket__delete, xsk_socket__fd,
-    xsk_socket_config, xsk_socket_config__bindgen_ty_1, XDP_SHARED_UMEM,
+    xsk_socket, xsk_socket__create, xsk_socket__delete, xsk_socket__fd, xsk_socket_config,
+    xsk_socket_config__bindgen_ty_1, XDP_COPY, XDP_SHARED_UMEM, XDP_USE_NEED_WAKEUP, XDP_ZEROCOPY,
     XSK_RING_CONS__DEFAULT_NUM_DESCS, XSK_RING_PROD__DEFAULT_NUM_DESCS,
     XSK_UMEM__DEFAULT_FRAME_HEADROOM, XSK_UMEM__DEFAULT_FRAME_SIZE,
 };
 
 use crate::{
-    mmap::{Mmap, MmapError},
-    packet::Frame,
     ring::{RingError, RxRing, TxRing},
     umem::{Umem, UmemError},
 };
 
+pub struct Frame<'a> {
+    pub address: u64,
+    pub data: &'a mut [u8],
+}
+
 #[derive(Debug)]
 pub struct SocketBuilder {
     pub frame_size: u32,
-    pub frame_headroom_size: u32,
+    pub headroom_size: u32,
     pub descriptor_count: u32,
     pub completion_ring_size: u32,
     pub fill_ring_size: u32,
     pub rx_ring_size: u32,
     pub tx_ring_size: u32,
+    pub use_hugetlb: bool,
 }
 
 impl Default for SocketBuilder {
     fn default() -> Self {
         Self {
             frame_size: XSK_UMEM__DEFAULT_FRAME_SIZE,
-            frame_headroom_size: XSK_UMEM__DEFAULT_FRAME_HEADROOM,
+            headroom_size: XSK_UMEM__DEFAULT_FRAME_HEADROOM,
             descriptor_count: XSK_RING_CONS__DEFAULT_NUM_DESCS,
             completion_ring_size: XSK_RING_CONS__DEFAULT_NUM_DESCS,
             fill_ring_size: XSK_RING_PROD__DEFAULT_NUM_DESCS,
             rx_ring_size: XSK_RING_CONS__DEFAULT_NUM_DESCS,
             tx_ring_size: XSK_RING_PROD__DEFAULT_NUM_DESCS,
+            use_hugetlb: false,
         }
     }
 }
 
 impl SocketBuilder {
-    // pub fn build(
-    //     self,
-    //     interface_name: impl AsRef<str>,
-    //     queue_id: u32,
-    // ) -> Result<(RxSocket, TxSocket), SocketError> { let mmap = Mmap::initialize(
-    //   self.frame_size + self.frame_headroom, self.descriptor_count, false, )?;
-
-    //     let umem = Umem::initialize(
-    //         self.completion_ring_size,
-    //         self.fill_ring_size,
-    //         self.frame_size,
-    //         self.frame_headroom,
-    //         mmap,
-    //     )
-    //     .map_err(SocketError::Umem)?;
-
-    //     Socket::initialize(
-    //         self.rx_ring_size,
-    //         self.tx_ring_size,
-    //         interface_name,
-    //         queue_id,
-    //         umem,
-    //     )
-    // }
     pub fn build(
         self,
         interface_name: impl AsRef<str>,
         queue_id: u32,
-        umem: &Umem,
-    ) -> Result<(RxSocket, TxSocket), SocketError> {
-        Socket::initialize(
+    ) -> Result<(RxSocket, TxSocket, Vec<Frame<'static>>), SocketError> {
+        let umem = Umem::new(
+            self.frame_size,
+            self.headroom_size,
+            self.descriptor_count,
+            self.completion_ring_size,
+            self.fill_ring_size,
+            self.use_hugetlb,
+        )?;
+
+        let frame_size = self.frame_size + self.headroom_size;
+
+        let frames: Vec<Frame> = (0..self.descriptor_count)
+            .map(|descriptor_index| {
+                let offset = descriptor_index * frame_size;
+                let mmap_address = umem.mmap().offset(offset as isize) as *mut u8;
+                let frame = Frame {
+                    address: offset as u64,
+                    data: unsafe {
+                        std::slice::from_raw_parts_mut(mmap_address, frame_size as usize)
+                    },
+                };
+
+                frame
+            })
+            .collect();
+
+        let (rx_socket, tx_socket) = Socket::initialize(
             self.rx_ring_size,
             self.tx_ring_size,
             interface_name,
             queue_id,
             umem,
-        )
+        )?;
+
+        Ok((rx_socket, tx_socket, frames))
     }
 }
 
@@ -117,18 +123,20 @@ impl Socket {
         tx_ring_size: u32,
         interface_name: impl AsRef<str>,
         queue_id: u32,
-        umem: &Umem,
+        umem: Umem,
     ) -> Result<(RxSocket, TxSocket), SocketError> {
         let mut rx_ring = RxRing::uninitialized(rx_ring_size)?;
         let mut tx_ring = TxRing::uninitialized(tx_ring_size)?;
+
         let interface_name =
             CString::new(interface_name.as_ref()).map_err(SocketError::InterfaceName)?;
+
         let socket_config = xsk_socket_config {
             rx_size: rx_ring_size,
             tx_size: tx_ring_size,
             __bindgen_anon_1: xsk_socket_config__bindgen_ty_1 { libxdp_flags: 0 },
-            xdp_flags: XDP_SHARED_UMEM,
-            bind_flags: XDP_USE_NEED_WAKEUP,
+            xdp_flags: 0,
+            bind_flags: 0,
         };
         let mut socket = null_mut();
 
@@ -153,20 +161,24 @@ impl Socket {
         let socket = Self {
             inner: Arc::new(inner),
         };
+
         let rx_socket = RxSocket::new(socket.clone(), rx_ring.initialize()?, umem.clone());
         let tx_socket = TxSocket::new(socket.clone(), tx_ring.initialize()?, umem.clone());
 
         Ok((rx_socket, tx_socket))
     }
 
+    #[inline(always)]
     pub fn as_ptr(&self) -> *mut xsk_socket {
         self.inner.0.as_ptr()
     }
 
+    #[inline(always)]
     pub fn socket_fd(&self) -> i32 {
         unsafe { xsk_socket__fd(self.as_ptr()) }
     }
 
+    #[inline(always)]
     pub fn poll_fd(&self) {
         let mut poll_fd_struct = pollfd {
             fd: self.socket_fd(),
@@ -193,56 +205,57 @@ impl RxSocket {
         }
     }
 
-    pub fn as_ptr(&self) -> *mut xsk_socket {
-        self.socket.as_ptr()
-    }
-
-    pub fn socket_fd(&self) -> i32 {
-        unsafe { xsk_socket__fd(self.as_ptr()) }
+    #[inline(always)]
+    pub fn umem(&self) -> &Umem {
+        &self.umem
     }
 
     pub fn rx_ring(&self) -> &RxRing {
         &self.rx_ring
     }
 
-    pub fn rx_burst(&mut self, buffer: &mut ArrayDeque<Frame, 128, Wrapping>, mmap: &Mmap) -> u32 {
-        let burst_size = buffer.capacity() as u32;
-        let mut index: u32 = 0;
+    // pub fn rx_burst(&mut self, burst_size: u32) -> u32 {
+    //     let received = self.rx_ring
+    // }
 
-        let received = self.rx_ring.peek(burst_size, &mut index);
-        if received == 0 {
-            if self.umem.fill_ring().needs_wakeup() {
-                self.socket.poll_fd();
-            }
+    // pub fn rx_burst(&mut self, buffer: &mut ArrayDeque<Frame, 128, Wrapping>,
+    // mmap: &Mmap) -> u32 {     let burst_size = buffer.capacity() as u32;
+    //     let mut index: u32 = 0;
 
-            return received;
-        }
+    //     let received = self.rx_ring.peek(burst_size, &mut index);
+    //     if received == 0 {
+    //         if self.umem.fill_ring().needs_wakeup() {
+    //             self.socket.poll_fd();
+    //         }
 
-        for _ in 0..received {
-            let frame = unsafe {
-                let descriptor: *const xdp_desc = self.rx_ring.rx_descriptor(index);
-                let address = (*descriptor).addr;
-                let length = (*descriptor).len;
-                let frame_address = mmap.offset(address as isize);
+    //         return received;
+    //     }
 
-                Frame {
-                    address,
-                    length,
-                    data: std::slice::from_raw_parts_mut(
-                        frame_address as *mut u8,
-                        mmap.frame_size().try_into().unwrap(),
-                    ),
-                }
-            };
+    //     for _ in 0..received {
+    //         let frame = unsafe {
+    //             let descriptor: *const xdp_desc =
+    // self.rx_ring.rx_descriptor(index);             let address =
+    // (*descriptor).addr;             let length = (*descriptor).len;
+    //             let frame_address = mmap.offset(address as isize);
 
-            buffer.push_back(frame);
-            index += 1;
-        }
+    //             Frame {
+    //                 address,
+    //                 length,
+    //                 data: std::slice::from_raw_parts_mut(
+    //                     frame_address as *mut u8,
+    //                     mmap.frame_size().try_into().unwrap(),
+    //                 ),
+    //             }
+    //         };
 
-        self.rx_ring.release(received);
+    //         buffer.push_back(frame);
+    //         index += 1;
+    //     }
 
-        received
-    }
+    //     self.rx_ring.release(received);
+
+    //     received
+    // }
 }
 
 pub struct TxSocket {
@@ -260,33 +273,25 @@ impl TxSocket {
         }
     }
 
-    pub fn as_ptr(&self) -> *mut xsk_socket {
-        self.socket.as_ptr()
-    }
+    // pub fn tx_burst(&mut self, buffer: &mut VecDeque<Frame>) -> u32 {
+    //     let mut index: u32 = 0;
 
-    pub fn socket_fd(&self) -> i32 {
-        unsafe { xsk_socket__fd(self.as_ptr()) }
-    }
+    //     unsafe { sendto(self.socket_fd(), null_mut(), 0, MSG_DONTWAIT,
+    // null_mut(), 0) };
 
-    pub fn tx_burst(&mut self, buffer: &mut VecDeque<Frame>) -> u32 {
-        let mut index: u32 = 0;
+    //     let completed = self.umem.completion_ring().peek(&mut index);
+    //     if completed > 0 {
+    //         for i in 0..completed {}
 
-        unsafe { sendto(self.socket_fd(), null_mut(), 0, MSG_DONTWAIT, null_mut(), 0) };
+    //         self.umem.completion_ring().release(completed);
+    //     }
 
-        let completed = self.umem.completion_ring().peek(&mut index);
-        if completed > 0 {
-            for i in 0..completed {}
-
-            self.umem.completion_ring().release(completed);
-        }
-
-        0
-    }
+    //     0
+    // }
 }
 
 #[derive(Debug)]
 pub enum SocketError {
-    Mmap(MmapError),
     Umem(UmemError),
     Ring(RingError),
     InterfaceName(NulError),
@@ -302,12 +307,6 @@ impl std::fmt::Display for SocketError {
 }
 
 impl std::error::Error for SocketError {}
-
-impl From<MmapError> for SocketError {
-    fn from(value: MmapError) -> Self {
-        Self::Mmap(value)
-    }
-}
 
 impl From<UmemError> for SocketError {
     fn from(value: UmemError) -> Self {
