@@ -14,6 +14,11 @@ pub struct Mmap {
 }
 
 impl Drop for Mmap {
+    /// # Panics
+    ///
+    /// The program panics when it fails to clean up. This is not a problem
+    /// while it is running and each [`RxSocket`] and [`TxSocket`] is referring
+    /// to it. However, we want to see the error when it happens.
     fn drop(&mut self) {
         let value = unsafe { munmap(self.address.as_ptr(), self.length) };
         if value.is_negative() {

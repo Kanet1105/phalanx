@@ -1,18 +1,34 @@
-use mangonel::{mmap::Mmap, umem::Umem, util::*};
+use std::{
+    collections::VecDeque,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
+
+use mangonel::{frame::Descriptor, socket::SocketBuilder};
 
 fn main() {
-    let frame_size: u32 = 2048;
-    let frame_headroom_size: u32 = 0;
-    let descriptor_count: u32 = 4096;
-    let completion_ring_size: u32 = 4096;
-    let fill_ring_size: u32 = 4096;
+    let running = Arc::new(AtomicBool::new(true));
+    ctrlc::set_handler({
+        let running = running.clone();
+        move || {
+            running.store(false, Ordering::SeqCst);
+        }
+    })
+    .unwrap();
 
-    setrlimit();
+    let interface_name = "enp5s0";
+    let queue_id = 0;
+    let config = SocketBuilder::default();
+    let (mut receiver, mut sender) = config.build(interface_name, queue_id).unwrap();
 
-    let mmap = Mmap::new(frame_size, frame_headroom_size, descriptor_count, false).unwrap();
-    let mut frame_vec = mmap.populate();
-    let umem = Umem::new(completion_ring_size, fill_ring_size, &mmap).unwrap();
-    umem.populate(frame_size, frame_headroom_size, descriptor_count);
-    println!("{:?}", umem.completion_ring());
-    println!("{:?}", umem.fill_ring());
+    let mut receiver_buffer = VecDeque::<Descriptor>::with_capacity(32);
+    while running.load(Ordering::SeqCst) {
+        let n = receiver.rx_burst(&mut receiver_buffer);
+        for _ in 0..n {
+            let mut descriptor = receiver_buffer.pop_front().unwrap();
+            println!("{:?}", descriptor.get_data());
+        }
+    }
 }

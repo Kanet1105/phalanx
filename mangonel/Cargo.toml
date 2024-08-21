@@ -7,6 +7,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-arrayvec = "0.7"
+arraydeque = "0.5"
+ctrlc = "3.4"
 libc = "0.2"
 mangonel-libxdp-sys = { path = "../mangonel-libxdp-sys" }
