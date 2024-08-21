@@ -8,7 +8,7 @@ use mangonel_libxdp_sys::{
 
 use crate::util::is_power_of_two;
 
-pub struct ConsumerRingUninit(MaybeUninit<xsk_ring_cons>);
+pub struct ConsumerRingUninit(Box<MaybeUninit<xsk_ring_cons>>);
 
 impl ConsumerRingUninit {
     fn new(size: u32) -> Result<Self, RingError> {
@@ -16,7 +16,7 @@ impl ConsumerRingUninit {
             return Err(RingError::Size(size));
         }
 
-        Ok(Self(MaybeUninit::<xsk_ring_cons>::uninit()))
+        Ok(Self(MaybeUninit::<xsk_ring_cons>::uninit().into()))
     }
 
     pub fn as_mut_ptr(&mut self) -> *mut xsk_ring_cons {
@@ -24,17 +24,19 @@ impl ConsumerRingUninit {
     }
 
     pub fn init(self, size: u32) -> Result<ConsumerRing, RingError> {
-        let ring: Box<xsk_ring_cons> = unsafe { self.0.assume_init().into() };
+        let ring: Box<xsk_ring_cons> =
+            unsafe { MaybeUninit::<xsk_ring_cons>::assume_init(*self.0).into() };
         if ring.size != size {
             return Err(RingError::Initialize);
         }
+
         let ring_ptr = NonNull::new(Box::into_raw(ring)).ok_or(RingError::RingIsNull)?;
 
         Ok(ConsumerRing(ring_ptr))
     }
 }
 
-pub struct ProducerRingUninit(MaybeUninit<xsk_ring_prod>);
+pub struct ProducerRingUninit(Box<MaybeUninit<xsk_ring_prod>>);
 
 impl ProducerRingUninit {
     fn new(size: u32) -> Result<Self, RingError> {
@@ -42,7 +44,7 @@ impl ProducerRingUninit {
             return Err(RingError::Size(size));
         }
 
-        Ok(Self(MaybeUninit::<xsk_ring_prod>::uninit()))
+        Ok(Self(MaybeUninit::<xsk_ring_prod>::uninit().into()))
     }
 
     pub fn as_mut_ptr(&mut self) -> *mut xsk_ring_prod {
@@ -50,10 +52,12 @@ impl ProducerRingUninit {
     }
 
     pub fn init(self, size: u32) -> Result<ProducerRing, RingError> {
-        let ring: Box<xsk_ring_prod> = unsafe { self.0.assume_init().into() };
+        let ring: Box<xsk_ring_prod> =
+            unsafe { MaybeUninit::<xsk_ring_prod>::assume_init(*self.0).into() };
         if ring.size != size {
             return Err(RingError::Initialize);
         }
+
         let ring_ptr = NonNull::new(Box::into_raw(ring)).ok_or(RingError::RingIsNull)?;
 
         Ok(ProducerRing(ring_ptr))
