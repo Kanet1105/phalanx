@@ -8,57 +8,111 @@ use mangonel_libxdp_sys::{
 
 use crate::util::is_power_of_two;
 
-pub struct ConsumerRingUninit(Box<MaybeUninit<xsk_ring_cons>>);
+pub enum RingType {
+    CompletionRing,
+    FillRing,
+    RxRing,
+    TxRing,
+}
+
+impl std::fmt::Debug for RingType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CompletionRing => write!(f, "{}", stringify!(CompletionRing)),
+            Self::FillRing => write!(f, "{}", stringify!(FillRing)),
+            Self::RxRing => write!(f, "{}", stringify!(RxRing)),
+            Self::TxRing => write!(f, "{}", stringify!(TxRing)),
+        }
+    }
+}
+
+impl RingType {
+    pub fn completion_ring_uninit(size: u32) -> Result<ConsumerRingUninit, RingError> {
+        ConsumerRingUninit::new(Self::CompletionRing, size)
+    }
+
+    pub fn fill_ring_uninit(size: u32) -> Result<ProducerRingUninit, RingError> {
+        ProducerRingUninit::new(Self::FillRing, size)
+    }
+
+    pub fn rx_ring_uninit(size: u32) -> Result<ConsumerRingUninit, RingError> {
+        ConsumerRingUninit::new(Self::RxRing, size)
+    }
+
+    pub fn tx_ring_uninit(size: u32) -> Result<ProducerRingUninit, RingError> {
+        ProducerRingUninit::new(Self::TxRing, size)
+    }
+}
+
+pub struct ConsumerRingUninit {
+    ring: Box<MaybeUninit<xsk_ring_cons>>,
+    ring_type: RingType,
+    size: u32,
+}
 
 impl ConsumerRingUninit {
-    fn new(size: u32) -> Result<Self, RingError> {
+    fn new(ring_type: RingType, size: u32) -> Result<Self, RingError> {
         if !is_power_of_two(size) {
-            return Err(RingError::Size(size));
+            return Err(RingError::Size(ring_type, size));
         }
 
-        Ok(Self(MaybeUninit::<xsk_ring_cons>::uninit().into()))
+        Ok(Self {
+            ring: MaybeUninit::<xsk_ring_cons>::uninit().into(),
+            ring_type,
+            size,
+        })
     }
 
     pub fn as_mut_ptr(&mut self) -> *mut xsk_ring_cons {
-        self.0.as_mut_ptr()
+        self.ring.as_mut_ptr()
     }
 
-    pub fn init(self, size: u32) -> Result<ConsumerRing, RingError> {
+    pub fn init(self) -> Result<ConsumerRing, RingError> {
         let ring: Box<xsk_ring_cons> =
-            unsafe { MaybeUninit::<xsk_ring_cons>::assume_init(*self.0).into() };
-        if ring.size != size {
-            return Err(RingError::Initialize);
+            unsafe { MaybeUninit::<xsk_ring_cons>::assume_init(*self.ring).into() };
+        if ring.size != self.size {
+            return Err(RingError::Initialize(self.ring_type));
         }
 
-        let ring_ptr = NonNull::new(Box::into_raw(ring)).ok_or(RingError::RingIsNull)?;
+        let ring_ptr =
+            NonNull::new(Box::into_raw(ring)).ok_or(RingError::RingIsNull(self.ring_type))?;
 
         Ok(ConsumerRing(ring_ptr))
     }
 }
 
-pub struct ProducerRingUninit(Box<MaybeUninit<xsk_ring_prod>>);
+pub struct ProducerRingUninit {
+    ring: Box<MaybeUninit<xsk_ring_prod>>,
+    ring_type: RingType,
+    size: u32,
+}
 
 impl ProducerRingUninit {
-    fn new(size: u32) -> Result<Self, RingError> {
+    fn new(ring_type: RingType, size: u32) -> Result<Self, RingError> {
         if !is_power_of_two(size) {
-            return Err(RingError::Size(size));
+            return Err(RingError::Size(ring_type, size));
         }
 
-        Ok(Self(MaybeUninit::<xsk_ring_prod>::uninit().into()))
+        Ok(Self {
+            ring: MaybeUninit::<xsk_ring_prod>::uninit().into(),
+            ring_type,
+            size,
+        })
     }
 
     pub fn as_mut_ptr(&mut self) -> *mut xsk_ring_prod {
-        self.0.as_mut_ptr()
+        self.ring.as_mut_ptr()
     }
 
-    pub fn init(self, size: u32) -> Result<ProducerRing, RingError> {
+    pub fn init(self) -> Result<ProducerRing, RingError> {
         let ring: Box<xsk_ring_prod> =
-            unsafe { MaybeUninit::<xsk_ring_prod>::assume_init(*self.0).into() };
-        if ring.size != size {
-            return Err(RingError::Initialize);
+            unsafe { MaybeUninit::<xsk_ring_prod>::assume_init(*self.ring).into() };
+        if ring.size != self.size {
+            return Err(RingError::Initialize(self.ring_type));
         }
 
-        let ring_ptr = NonNull::new(Box::into_raw(ring)).ok_or(RingError::RingIsNull)?;
+        let ring_ptr =
+            NonNull::new(Box::into_raw(ring)).ok_or(RingError::RingIsNull(self.ring_type))?;
 
         Ok(ProducerRing(ring_ptr))
     }
@@ -82,10 +136,6 @@ impl std::ops::Deref for ConsumerRing {
 }
 
 impl ConsumerRing {
-    pub fn uninit(size: u32) -> Result<ConsumerRingUninit, RingError> {
-        ConsumerRingUninit::new(size)
-    }
-
     #[inline(always)]
     pub fn peek(&self, size: u32, index: &mut u32) -> u32 {
         unsafe { xsk_ring_cons__peek(self.0.as_ptr(), size, index) }
@@ -125,10 +175,6 @@ impl std::ops::Deref for ProducerRing {
 }
 
 impl ProducerRing {
-    pub fn uninit(size: u32) -> Result<ProducerRingUninit, RingError> {
-        ProducerRingUninit::new(size)
-    }
-
     #[inline(always)]
     pub fn fill_address(&self, index: u32) -> *mut u64 {
         unsafe { xsk_ring_prod__fill_addr(self.0.as_ptr(), index) }
@@ -160,19 +206,23 @@ impl ProducerRing {
 }
 
 pub enum RingError {
-    Size(u32),
-    Initialize,
-    RingIsNull,
+    Size(RingType, u32),
+    Initialize(RingType),
+    RingIsNull(RingType),
 }
 
 impl std::fmt::Debug for RingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Size(ring_size) => {
-                write!(f, "The ring size: {} is not the power of two", ring_size)
+            Self::Size(ring_type, ring_size) => {
+                write!(
+                    f,
+                    "{:?} size ({}) is not the power of two",
+                    ring_type, ring_size
+                )
             }
-            Self::Initialize => write!(f, "Failed to initialize the ring"),
-            Self::RingIsNull => write!(f, "Ring pointer is null"),
+            Self::Initialize(ring_type) => write!(f, "Failed to initialize {:?}", ring_type),
+            Self::RingIsNull(ring_type) => write!(f, "{:?} is null", ring_type),
         }
     }
 }
