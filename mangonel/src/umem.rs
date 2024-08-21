@@ -7,7 +7,7 @@ use mangonel_libxdp_sys::{xsk_umem, xsk_umem__create, xsk_umem__delete, xsk_umem
 
 use crate::{
     mmap::{Mmap, MmapError},
-    ring::{CompletionRing, FillRing, RingError},
+    ring::{ConsumerRing, ProducerRing, RingError},
 };
 
 pub struct Umem(Arc<UmemInner>);
@@ -40,8 +40,8 @@ impl Umem {
         let mmap = Mmap::new(frame_size, headroom_size, descriptor_count, use_hugetlb)?;
 
         let mut umem_ptr = null_mut::<xsk_umem>();
-        let mut completion_ring = CompletionRing::uninitialized(completion_ring_size)?;
-        let mut fill_ring = FillRing::uninitialized(fill_ring_size)?;
+        let mut completion_ring = ConsumerRing::uninit(completion_ring_size)?;
+        let mut fill_ring = ProducerRing::uninit(fill_ring_size)?;
         let umem_config = xsk_umem_config {
             fill_size: fill_ring_size,
             comp_size: completion_ring_size,
@@ -68,8 +68,8 @@ impl Umem {
 
         let inner = UmemInner {
             umem: NonNull::new(umem_ptr).ok_or(UmemError::UmemIsNull)?,
-            completion_ring: completion_ring.initialize()?,
-            fill_ring: fill_ring.initialize()?,
+            completion_ring: completion_ring.init(completion_ring_size)?,
+            fill_ring: fill_ring.init(fill_ring_size)?,
             mmap,
         };
 
@@ -79,17 +79,17 @@ impl Umem {
 
 pub struct UmemInner {
     umem: NonNull<xsk_umem>,
-    completion_ring: CompletionRing,
-    fill_ring: FillRing,
+    completion_ring: ConsumerRing,
+    fill_ring: ProducerRing,
     mmap: Mmap,
 }
 
 impl Drop for UmemInner {
     /// # Panics
     ///
-    /// [`Umem`] will panic when it fails to clean up. This is not a problem
-    /// while the program is running and each [`RxSocket`] and [`TxSocket`] is
-    /// referring to it. However, we want to see the error when it happens.
+    /// The program panics when it fails to clean up. This is not a problem
+    /// while it is running and each [`RxSocket`] and [`TxSocket`] is referring
+    /// to it. However, we want to see the error when it happens.
     fn drop(&mut self) {
         let value = unsafe { xsk_umem__delete(self.umem.as_ptr()) };
         if value.is_negative() {
@@ -108,12 +108,12 @@ impl UmemInner {
     }
 
     #[inline(always)]
-    pub fn completion_ring(&self) -> &CompletionRing {
+    pub fn completion_ring(&self) -> &ConsumerRing {
         &self.completion_ring
     }
 
     #[inline(always)]
-    pub fn fill_ring(&self) -> &FillRing {
+    pub fn fill_ring(&self) -> &ProducerRing {
         &self.fill_ring
     }
 
