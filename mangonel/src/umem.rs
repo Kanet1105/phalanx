@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     ptr::{null_mut, NonNull},
     sync::Arc,
 };
@@ -6,8 +7,9 @@ use std::{
 use mangonel_libxdp_sys::{xsk_umem, xsk_umem__create, xsk_umem__delete, xsk_umem_config};
 
 use crate::{
+    frame::Descriptor,
     mmap::{Mmap, MmapError},
-    ring::{ConsumerRing, ProducerRing, RingError},
+    ring::{ConsumerRing, ProducerRing, RingError, RingType},
 };
 
 pub struct Umem(Arc<UmemInner>);
@@ -40,8 +42,8 @@ impl Umem {
         let mmap = Mmap::new(frame_size, headroom_size, descriptor_count, use_hugetlb)?;
 
         let mut umem_ptr = null_mut::<xsk_umem>();
-        let mut completion_ring = ConsumerRing::uninit(completion_ring_size)?;
-        let mut fill_ring = ProducerRing::uninit(fill_ring_size)?;
+        let mut completion_ring = RingType::completion_ring_uninit(completion_ring_size)?;
+        let mut fill_ring = RingType::fill_ring_uninit(fill_ring_size)?;
         let umem_config = xsk_umem_config {
             fill_size: fill_ring_size,
             comp_size: completion_ring_size,
@@ -68,8 +70,8 @@ impl Umem {
 
         let inner = UmemInner {
             umem: NonNull::new(umem_ptr).ok_or(UmemError::UmemIsNull)?,
-            completion_ring: completion_ring.init(completion_ring_size)?,
-            fill_ring: fill_ring.init(fill_ring_size)?,
+            completion_ring: completion_ring.init()?,
+            fill_ring: fill_ring.init()?,
             mmap,
         };
 
@@ -121,6 +123,37 @@ impl UmemInner {
     pub fn mmap(&self) -> &Mmap {
         &self.mmap
     }
+
+    #[inline(always)]
+    pub fn fill(&self, buffer: &mut VecDeque<Descriptor>) -> u32 {
+        let mut index: u32 = 0;
+        let descriptor_count = buffer.len() as u32;
+
+        let available = self.fill_ring.reserve(descriptor_count, &mut index);
+        if available > 0 {
+            for _ in 0..available {
+                let address = self.fill_ring.fill_address(index);
+                unsafe { *address = buffer.pop_front().unwrap().address() };
+                index += 1;
+            }
+
+            self.fill_ring.submit(available);
+        }
+
+        available
+    }
+
+    // pub fn complete(&self, buffer: &mut VecDeque<Descriptor>) {
+    //     let mut index: u32 = 0;
+    //     let descriptor_count = buffer.len() as u32;
+
+    //     let available = self.completion_ring.peek(descriptor_count, &mut index);
+    //     if available > 0 {
+    //         for _ in 0..available {}
+
+    //         self.completion_ring.release(available);
+    //     }
+    // }
 }
 
 #[derive(Debug)]
