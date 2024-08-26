@@ -22,14 +22,6 @@ impl From<(*const xdp_desc, &Umem)> for Descriptor {
 }
 
 impl Descriptor {
-    pub fn new(address: u64, length: u32, umem: &Umem) -> Self {
-        Self {
-            address,
-            length,
-            umem: umem.clone(),
-        }
-    }
-
     #[inline(always)]
     pub fn address(&self) -> u64 {
         self.address
@@ -41,7 +33,7 @@ impl Descriptor {
     }
 
     #[inline(always)]
-    pub fn get_data<'umem>(&mut self) -> &'umem mut [u8] {
+    pub fn get_data(&mut self) -> &mut [u8] {
         let offset = self.umem.mmap().offset(self.address as isize) as *mut u8;
 
         unsafe { std::slice::from_raw_parts_mut(offset, self.length as usize) }
