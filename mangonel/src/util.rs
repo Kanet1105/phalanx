@@ -6,6 +6,11 @@ pub fn is_power_of_two(size: u32) -> bool {
     (size & (size - 1)) == 0
 }
 
+/// # Panics
+///
+/// The function panics under the following conditions:
+/// - the system fails to allow unlimited locking of memory.
+/// - the program does not have the permission to do so.
 pub fn setrlimit() {
     let value = unsafe {
         let rlimit = libc::rlimit {

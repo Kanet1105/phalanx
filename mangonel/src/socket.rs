@@ -8,7 +8,7 @@ use std::{
 use libc::{poll, pollfd, sendto, MSG_DONTWAIT, POLLIN};
 use mangonel_libxdp_sys::{
     xsk_socket, xsk_socket__create, xsk_socket__delete, xsk_socket__fd, xsk_socket_config,
-    xsk_socket_config__bindgen_ty_1, XDP_COPY, XDP_USE_NEED_WAKEUP,
+    xsk_socket_config__bindgen_ty_1, XDP_COPY, XDP_USE_NEED_WAKEUP, XDP_ZEROCOPY,
     XSK_RING_CONS__DEFAULT_NUM_DESCS, XSK_RING_PROD__DEFAULT_NUM_DESCS,
     XSK_UMEM__DEFAULT_FRAME_HEADROOM, XSK_UMEM__DEFAULT_FRAME_SIZE,
 };
@@ -30,7 +30,7 @@ pub struct SocketBuilder {
     pub rx_ring_size: u32,
     pub tx_ring_size: u32,
     pub use_hugetlb: bool,
-    pub force_copy: bool,
+    pub force_zero_copy: bool,
 }
 
 impl Default for SocketBuilder {
@@ -44,12 +44,15 @@ impl Default for SocketBuilder {
             rx_ring_size: XSK_RING_CONS__DEFAULT_NUM_DESCS,
             tx_ring_size: XSK_RING_PROD__DEFAULT_NUM_DESCS,
             use_hugetlb: false,
-            force_copy: true,
+            force_zero_copy: false,
         }
     }
 }
 
 impl SocketBuilder {
+    /// # Panics
+    ///
+    /// The function panics when [`setrlimit()`] panic conditions are met.
     pub fn build(
         self,
         interface_name: impl AsRef<str>,
@@ -69,7 +72,7 @@ impl SocketBuilder {
         let (rx_socket, tx_socket) = Socket::initialize(
             self.rx_ring_size,
             self.tx_ring_size,
-            self.force_copy,
+            self.force_zero_copy,
             interface_name,
             queue_id,
             umem,
@@ -108,7 +111,7 @@ impl Socket {
     pub fn initialize(
         rx_ring_size: u32,
         tx_ring_size: u32,
-        force_copy: bool,
+        force_zero_copy: bool,
         interface_name: impl AsRef<str>,
         queue_id: u32,
         umem: Umem,
@@ -116,9 +119,10 @@ impl Socket {
         let mut rx_ring = RingType::rx_ring_uninit(rx_ring_size)?;
         let mut tx_ring = RingType::tx_ring_uninit(tx_ring_size)?;
 
-        let mut xdp_flags: u32 = 0;
-        if force_copy {
-            xdp_flags |= XDP_COPY;
+        let mut xdp_flags: u32 = XDP_USE_NEED_WAKEUP;
+        match force_zero_copy {
+            true => xdp_flags |= XDP_ZEROCOPY,
+            false => xdp_flags |= XDP_COPY,
         }
 
         let interface_name =
@@ -286,16 +290,18 @@ impl TxSocket {
             self.tx_ring.submit(available);
         }
 
-        unsafe {
-            sendto(
-                self.socket.socket_fd(),
-                null_mut(),
-                0,
-                MSG_DONTWAIT,
-                null_mut(),
-                0,
-            )
-        };
+        if self.tx_ring.needs_wakeup() {
+            unsafe {
+                sendto(
+                    self.socket.socket_fd(),
+                    null_mut(),
+                    0,
+                    MSG_DONTWAIT,
+                    null_mut(),
+                    0,
+                )
+            };
+        }
         self.umem.complete();
 
         available
