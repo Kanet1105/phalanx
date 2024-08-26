@@ -18,17 +18,22 @@ fn main() {
     })
     .unwrap();
 
-    let interface_name = "enp5s0";
+    let interface_name = "wlx94a67e7c18ac";
     let queue_id = 0;
-    let config = SocketBuilder::default();
+    let mut config = SocketBuilder::default();
+    config.descriptor_count = 4;
     let (mut receiver, mut sender) = config.build(interface_name, queue_id).unwrap();
 
-    let mut receiver_buffer = VecDeque::<Descriptor>::with_capacity(32);
+    let mut buffer = VecDeque::<Descriptor>::with_capacity(32);
     while running.load(Ordering::SeqCst) {
-        let n = receiver.rx_burst(&mut receiver_buffer);
-        for _ in 0..n {
-            let mut descriptor = receiver_buffer.pop_front().unwrap();
-            println!("{:?}", descriptor.get_data());
+        let received = receiver.rx_burst(&mut buffer);
+        if received > 0 {
+            for descriptor_index in 0..received {
+                let descriptor = buffer.get(descriptor_index as usize).unwrap();
+                println!("{}", descriptor.address());
+            }
+
+            sender.tx_burst(&mut buffer);
         }
     }
 }
