@@ -1,9 +1,10 @@
 use std::{mem::MaybeUninit, ptr::NonNull};
 
 use mangonel_libxdp_sys::{
-    xdp_desc, xsk_ring_cons, xsk_ring_cons__cancel, xsk_ring_cons__peek, xsk_ring_cons__release,
-    xsk_ring_cons__rx_desc, xsk_ring_prod, xsk_ring_prod__fill_addr, xsk_ring_prod__needs_wakeup,
-    xsk_ring_prod__reserve, xsk_ring_prod__submit, xsk_ring_prod__tx_desc,
+    xdp_desc, xsk_ring_cons, xsk_ring_cons__cancel, xsk_ring_cons__comp_addr, xsk_ring_cons__peek,
+    xsk_ring_cons__release, xsk_ring_cons__rx_desc, xsk_ring_prod, xsk_ring_prod__fill_addr,
+    xsk_ring_prod__needs_wakeup, xsk_ring_prod__reserve, xsk_ring_prod__submit,
+    xsk_ring_prod__tx_desc,
 };
 
 use crate::util::is_power_of_two;
@@ -136,6 +137,10 @@ impl std::ops::Deref for ConsumerRing {
 }
 
 impl ConsumerRing {
+    pub fn complete_address(&self, index: u32) -> *const u64 {
+        unsafe { xsk_ring_cons__comp_addr(self.0.as_ptr(), index) }
+    }
+
     #[inline(always)]
     pub fn peek(&self, size: u32, index: &mut u32) -> u32 {
         unsafe { xsk_ring_cons__peek(self.0.as_ptr(), size, index) }
