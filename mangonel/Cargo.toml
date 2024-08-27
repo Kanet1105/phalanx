@@ -12,3 +12,4 @@ crossbeam = "0.8"
 ctrlc = "3.4"
 libc = "0.2"
 mangonel-libxdp-sys = { path = "../mangonel-libxdp-sys" }
+pnet = "0.35"
