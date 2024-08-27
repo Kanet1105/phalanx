@@ -8,9 +8,9 @@ use std::{
 use libc::{poll, pollfd, sendto, MSG_DONTWAIT, POLLIN};
 use mangonel_libxdp_sys::{
     xsk_socket, xsk_socket__create, xsk_socket__delete, xsk_socket__fd, xsk_socket_config,
-    xsk_socket_config__bindgen_ty_1, XDP_COPY, XDP_USE_NEED_WAKEUP, XDP_ZEROCOPY,
-    XSK_RING_CONS__DEFAULT_NUM_DESCS, XSK_RING_PROD__DEFAULT_NUM_DESCS,
-    XSK_UMEM__DEFAULT_FRAME_HEADROOM, XSK_UMEM__DEFAULT_FRAME_SIZE,
+    xsk_socket_config__bindgen_ty_1, XDP_COPY, XDP_ZEROCOPY, XSK_RING_CONS__DEFAULT_NUM_DESCS,
+    XSK_RING_PROD__DEFAULT_NUM_DESCS, XSK_UMEM__DEFAULT_FRAME_HEADROOM,
+    XSK_UMEM__DEFAULT_FRAME_SIZE,
 };
 
 use crate::{
@@ -25,8 +25,8 @@ pub struct SocketBuilder {
     pub frame_size: u32,
     pub headroom_size: u32,
     pub descriptor_count: u32,
-    pub completion_ring_size: u32,
     pub fill_ring_size: u32,
+    pub completion_ring_size: u32,
     pub rx_ring_size: u32,
     pub tx_ring_size: u32,
     pub use_hugetlb: bool,
@@ -39,8 +39,8 @@ impl Default for SocketBuilder {
             frame_size: XSK_UMEM__DEFAULT_FRAME_SIZE,
             headroom_size: XSK_UMEM__DEFAULT_FRAME_HEADROOM,
             descriptor_count: XSK_RING_CONS__DEFAULT_NUM_DESCS,
-            completion_ring_size: XSK_RING_CONS__DEFAULT_NUM_DESCS,
             fill_ring_size: XSK_RING_PROD__DEFAULT_NUM_DESCS,
+            completion_ring_size: XSK_RING_CONS__DEFAULT_NUM_DESCS,
             rx_ring_size: XSK_RING_CONS__DEFAULT_NUM_DESCS,
             tx_ring_size: XSK_RING_PROD__DEFAULT_NUM_DESCS,
             use_hugetlb: false,
@@ -63,9 +63,8 @@ impl SocketBuilder {
         let umem = Umem::new(
             self.frame_size,
             self.headroom_size,
-            self.descriptor_count,
-            self.completion_ring_size,
             self.fill_ring_size,
+            self.completion_ring_size,
             self.use_hugetlb,
         )?;
 
@@ -119,7 +118,7 @@ impl Socket {
         let mut rx_ring = RingType::rx_ring_uninit(rx_ring_size)?;
         let mut tx_ring = RingType::tx_ring_uninit(tx_ring_size)?;
 
-        let mut xdp_flags: u32 = XDP_USE_NEED_WAKEUP;
+        let mut xdp_flags = 0;
         match force_zero_copy {
             true => xdp_flags |= XDP_ZEROCOPY,
             false => xdp_flags |= XDP_COPY,
@@ -131,7 +130,7 @@ impl Socket {
         let socket_config = xsk_socket_config {
             rx_size: rx_ring_size,
             tx_size: tx_ring_size,
-            __bindgen_anon_1: xsk_socket_config__bindgen_ty_1 { libxdp_flags: 0 },
+            __bindgen_anon_1: xsk_socket_config__bindgen_ty_1 { libbpf_flags: 0 },
             xdp_flags,
             bind_flags: 0,
         };
@@ -218,8 +217,27 @@ impl RxSocket {
     }
 
     #[inline(always)]
+    fn fill(&self) -> u32 {
+        let filled = self.umem.fill();
+
+        if self.umem.fill_ring().needs_wakeup() {
+            let mut poll_fd_struct = pollfd {
+                fd: self.socket.socket_fd(),
+                events: POLLIN,
+                revents: 0,
+            };
+
+            unsafe {
+                poll(&mut poll_fd_struct, 1, 0);
+            }
+        }
+
+        filled
+    }
+
+    #[inline(always)]
     pub fn rx_burst(&mut self, buffer: &mut VecDeque<Descriptor>) -> u32 {
-        self.umem.fill();
+        self.fill();
 
         let mut index: u32 = 0;
         let batch_size = buffer.capacity() as u32;
@@ -271,6 +289,24 @@ impl TxSocket {
     }
 
     #[inline(always)]
+    fn complete(&self, batch_size: u32) -> u32 {
+        if self.tx_ring.needs_wakeup() {
+            unsafe {
+                sendto(
+                    self.socket.socket_fd(),
+                    null_mut(),
+                    0,
+                    MSG_DONTWAIT,
+                    null_mut(),
+                    0,
+                )
+            };
+        }
+
+        self.umem.complete(batch_size)
+    }
+
+    #[inline(always)]
     pub fn tx_burst(&mut self, buffer: &mut VecDeque<Descriptor>) -> u32 {
         let mut index: u32 = 0;
         let batch_size = buffer.len() as u32;
@@ -290,19 +326,7 @@ impl TxSocket {
             self.tx_ring.submit(available);
         }
 
-        if self.tx_ring.needs_wakeup() {
-            unsafe {
-                sendto(
-                    self.socket.socket_fd(),
-                    null_mut(),
-                    0,
-                    MSG_DONTWAIT,
-                    null_mut(),
-                    0,
-                )
-            };
-        }
-        self.umem.complete();
+        self.complete(batch_size);
 
         available
     }
