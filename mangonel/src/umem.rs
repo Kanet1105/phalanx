@@ -1,11 +1,13 @@
 use std::{
+    ffi::c_void,
     ptr::{null_mut, NonNull},
     sync::Arc,
 };
 
 use crossbeam::queue::ArrayQueue;
 use mangonel_libxdp_sys::{
-    xsk_umem, xsk_umem__create, xsk_umem__delete, xsk_umem_config, XDP_PACKET_HEADROOM,
+    xsk_umem, xsk_umem__create, xsk_umem__delete, xsk_umem__get_data, xsk_umem_config,
+    XDP_PACKET_HEADROOM,
 };
 
 use crate::{
@@ -173,6 +175,11 @@ impl Umem {
         }
 
         available
+    }
+
+    #[inline(always)]
+    pub fn get_data(&self, address: u64) -> *mut c_void {
+        unsafe { xsk_umem__get_data(self.inner.mmap.as_ptr(), address) }
     }
 }
 
