@@ -4,7 +4,9 @@ use std::{
 };
 
 use crossbeam::queue::ArrayQueue;
-use mangonel_libxdp_sys::{xsk_umem, xsk_umem__create, xsk_umem__delete, xsk_umem_config};
+use mangonel_libxdp_sys::{
+    xsk_umem, xsk_umem__create, xsk_umem__delete, xsk_umem_config, XDP_PACKET_HEADROOM,
+};
 
 use crate::{
     mmap::{Mmap, MmapError},
@@ -93,7 +95,7 @@ impl Umem {
         // Pre-fill the buffer with addresses.
         let buffer_free = ArrayQueue::new(fill_ring_size as usize);
         (0..fill_ring_size).for_each(|descriptor_index: u32| {
-            let offset = descriptor_index * (frame_size + headroom_size);
+            let offset = descriptor_index * (frame_size + headroom_size + XDP_PACKET_HEADROOM);
             buffer_free.push(offset as u64).unwrap();
         });
 
@@ -137,8 +139,9 @@ impl Umem {
     }
 
     #[inline(always)]
-    pub fn fill(&self, size: u32) -> u32 {
+    pub fn fill(&self) -> u32 {
         let mut index: u32 = 0;
+        let size = self.inner.buffer_free.len() as u32;
 
         let available = self.inner.fill_ring.reserve(size, &mut index);
         if available > 0 {
