@@ -18,24 +18,23 @@ fn main() {
     })
     .unwrap();
 
-    let interface_name = "lo";
+    let interface_name = "wlx94a67e7c18ac";
     let queue_id = 0;
-    let mut config = SocketBuilder::default();
+    let config = SocketBuilder::default();
     let (mut receiver, mut sender) = config.build(interface_name, queue_id).unwrap();
 
-    println!("{:?}", receiver.umem().fill_ring().needs_wakeup());
-    println!("{:?}", sender.tx_ring().needs_wakeup());
-
-    let mut buffer = VecDeque::<Descriptor>::with_capacity(32);
+    let mut receiver_buffer = VecDeque::<Descriptor>::with_capacity(64);
+    let mut sender_buffer = VecDeque::<Descriptor>::with_capacity(64);
     while running.load(Ordering::SeqCst) {
-        let received = receiver.rx_burst(&mut buffer);
+        let received = receiver.rx_burst(&mut receiver_buffer);
         if received > 0 {
-            for descriptor_index in 0..received {
-                let descriptor = buffer.get(descriptor_index as usize).unwrap();
-                // println!("{}", descriptor.address());
+            for _ in 0..received {
+                let mut descriptor = receiver_buffer.pop_front().unwrap();
+                descriptor.get_data();
+                sender_buffer.push_back(descriptor);
             }
 
-            sender.tx_burst(&mut buffer);
+            sender.tx_burst(&mut sender_buffer);
         }
     }
 }

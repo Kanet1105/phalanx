@@ -1,4 +1,5 @@
 use mangonel_libxdp_sys::xdp_desc;
+use pnet::packet::{ethernet::MutableEthernetPacket, ipv4::MutableIpv4Packet};
 
 use crate::umem::Umem;
 
@@ -33,9 +34,11 @@ impl Descriptor {
     }
 
     #[inline(always)]
-    pub fn get_data(&mut self) -> &mut [u8] {
+    pub fn get_data(&mut self) {
         let offset = self.umem.mmap().offset(self.address as isize) as *mut u8;
-
-        unsafe { std::slice::from_raw_parts_mut(offset, self.length as usize) }
+        let data = unsafe { std::slice::from_raw_parts_mut(offset, self.length as usize) };
+        // let ethernet_frame = MutableEthernetPacket::new(data).unwrap();
+        let ipv4_packet = MutableIpv4Packet::new(&mut data[14..]).unwrap();
+        println!("{:?}", ipv4_packet);
     }
 }
