@@ -1,27 +1,17 @@
-use std::{mem::MaybeUninit, ptr::NonNull, sync::Arc};
+use std::{mem::MaybeUninit, ptr::NonNull};
 
-use crossbeam::queue::ArrayQueue;
 use mangonel_libxdp_sys::{
     xdp_desc, xsk_ring_cons, xsk_ring_cons__cancel, xsk_ring_cons__comp_addr, xsk_ring_cons__peek,
     xsk_ring_cons__release, xsk_ring_cons__rx_desc, xsk_ring_prod, xsk_ring_prod__fill_addr,
     xsk_ring_prod__needs_wakeup, xsk_ring_prod__reserve, xsk_ring_prod__submit,
-    xsk_ring_prod__tx_desc, XSK_RING_CONS__DEFAULT_NUM_DESCS, XSK_RING_PROD__DEFAULT_NUM_DESCS,
+    xsk_ring_prod__tx_desc,
 };
 
-use crate::{descriptor::Descriptor, util::is_power_of_two};
+use crate::util::is_power_of_two;
 
 pub struct ConsumerRingUninit {
     size: u32,
     ring: Box<MaybeUninit<xsk_ring_cons>>,
-}
-
-impl Default for ConsumerRingUninit {
-    fn default() -> Self {
-        Self {
-            size: XSK_RING_CONS__DEFAULT_NUM_DESCS,
-            ring: Box::new(MaybeUninit::<xsk_ring_cons>::uninit()),
-        }
-    }
 }
 
 impl ConsumerRingUninit {
@@ -56,15 +46,6 @@ impl ConsumerRingUninit {
 pub struct ProducerRingUninit {
     size: u32,
     ring: Box<MaybeUninit<xsk_ring_prod>>,
-}
-
-impl Default for ProducerRingUninit {
-    fn default() -> Self {
-        Self {
-            size: XSK_RING_PROD__DEFAULT_NUM_DESCS,
-            ring: Box::new(MaybeUninit::<xsk_ring_prod>::uninit()),
-        }
-    }
 }
 
 impl ProducerRingUninit {
@@ -184,17 +165,6 @@ impl ProducerRing {
     #[inline(always)]
     pub fn tx_descriptor(&self, index: u32) -> *mut xdp_desc {
         unsafe { xsk_ring_prod__tx_desc(self.0.as_ptr(), index) }
-    }
-}
-
-pub struct DescriptorRing(Arc<ArrayQueue<Descriptor>>);
-
-impl Default for DescriptorRing {
-    fn default() -> Self {
-        let size = XSK_RING_CONS__DEFAULT_NUM_DESCS * 2;
-        let ring = ArrayQueue::<Descriptor>::new(size as usize);
-
-        Self(Arc::new(ring))
     }
 }
 
