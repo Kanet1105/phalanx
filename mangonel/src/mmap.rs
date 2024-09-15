@@ -28,13 +28,7 @@ impl Drop for Mmap {
 }
 
 impl Mmap {
-    pub fn new(
-        frame_size: u32,
-        headroom_size: u32,
-        descriptor_count: u32,
-        hugetlb: bool,
-    ) -> Result<Self, MmapError> {
-        let length = ((frame_size + headroom_size) * descriptor_count) as usize;
+    pub fn new(length: usize, hugetlb: bool) -> Result<Self, MmapError> {
         let protection_mode = PROT_READ | PROT_WRITE;
         let mut flags = MAP_PRIVATE | MAP_ANONYMOUS;
         if hugetlb {
