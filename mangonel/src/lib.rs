@@ -1,4 +1,4 @@
-pub mod frame;
+pub mod descriptor;
 pub mod mmap;
 pub mod ring;
 pub mod socket;
