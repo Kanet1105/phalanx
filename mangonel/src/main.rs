@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use mangonel::{frame::Descriptor, socket::SocketBuilder};
+use mangonel::{descriptor::Descriptor, socket::SocketBuilder};
 
 fn main() {
     let running = Arc::new(AtomicBool::new(true));
@@ -18,9 +18,11 @@ fn main() {
     })
     .unwrap();
 
-    let interface_name = "wlx94a67e7c18ac";
+    let interface_name = "enp5s0";
     let queue_id = 0;
-    let config = SocketBuilder::default();
+    let mut config = SocketBuilder::default();
+    config.frame_headroom_size = 256;
+    config.descriptor_count = 10;
     let (mut receiver, mut sender) = config.build(interface_name, queue_id).unwrap();
 
     let mut receiver_buffer = VecDeque::<Descriptor>::with_capacity(64);
@@ -30,7 +32,8 @@ fn main() {
         if received > 0 {
             for _ in 0..received {
                 let mut descriptor = receiver_buffer.pop_front().unwrap();
-                descriptor.get_data();
+                // descriptor.get_data();
+                println!("{}", descriptor.address());
                 sender_buffer.push_back(descriptor);
             }
 

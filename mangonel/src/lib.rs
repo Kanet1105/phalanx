@@ -1,3 +1,4 @@
+pub mod buffer;
 pub mod descriptor;
 pub mod mmap;
 pub mod ring;
