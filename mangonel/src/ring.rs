@@ -1,66 +1,38 @@
-use std::{mem::MaybeUninit, ptr::NonNull};
+use std::{mem::MaybeUninit, ptr::NonNull, sync::Arc};
 
+use crossbeam::queue::ArrayQueue;
 use mangonel_libxdp_sys::{
     xdp_desc, xsk_ring_cons, xsk_ring_cons__cancel, xsk_ring_cons__comp_addr, xsk_ring_cons__peek,
     xsk_ring_cons__release, xsk_ring_cons__rx_desc, xsk_ring_prod, xsk_ring_prod__fill_addr,
     xsk_ring_prod__needs_wakeup, xsk_ring_prod__reserve, xsk_ring_prod__submit,
-    xsk_ring_prod__tx_desc,
+    xsk_ring_prod__tx_desc, XSK_RING_CONS__DEFAULT_NUM_DESCS, XSK_RING_PROD__DEFAULT_NUM_DESCS,
 };
 
-use crate::util::is_power_of_two;
-
-pub enum RingType {
-    CompletionRing,
-    FillRing,
-    RxRing,
-    TxRing,
-}
-
-impl std::fmt::Debug for RingType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::CompletionRing => write!(f, "{}", stringify!(CompletionRing)),
-            Self::FillRing => write!(f, "{}", stringify!(FillRing)),
-            Self::RxRing => write!(f, "{}", stringify!(RxRing)),
-            Self::TxRing => write!(f, "{}", stringify!(TxRing)),
-        }
-    }
-}
-
-impl RingType {
-    pub fn completion_ring_uninit(size: u32) -> Result<ConsumerRingUninit, RingError> {
-        ConsumerRingUninit::new(Self::CompletionRing, size)
-    }
-
-    pub fn fill_ring_uninit(size: u32) -> Result<ProducerRingUninit, RingError> {
-        ProducerRingUninit::new(Self::FillRing, size)
-    }
-
-    pub fn rx_ring_uninit(size: u32) -> Result<ConsumerRingUninit, RingError> {
-        ConsumerRingUninit::new(Self::RxRing, size)
-    }
-
-    pub fn tx_ring_uninit(size: u32) -> Result<ProducerRingUninit, RingError> {
-        ProducerRingUninit::new(Self::TxRing, size)
-    }
-}
+use crate::{descriptor::Descriptor, util::is_power_of_two};
 
 pub struct ConsumerRingUninit {
-    ring: Box<MaybeUninit<xsk_ring_cons>>,
-    ring_type: RingType,
     size: u32,
+    ring: Box<MaybeUninit<xsk_ring_cons>>,
+}
+
+impl Default for ConsumerRingUninit {
+    fn default() -> Self {
+        Self {
+            size: XSK_RING_CONS__DEFAULT_NUM_DESCS,
+            ring: Box::new(MaybeUninit::<xsk_ring_cons>::uninit()),
+        }
+    }
 }
 
 impl ConsumerRingUninit {
-    fn new(ring_type: RingType, size: u32) -> Result<Self, RingError> {
+    pub fn new(size: u32) -> Result<Self, RingError> {
         if !is_power_of_two(size) {
-            return Err(RingError::Size(ring_type, size));
+            return Err(RingError::Size(size));
         }
 
         Ok(Self {
-            ring: MaybeUninit::<xsk_ring_cons>::uninit().into(),
-            ring_type,
             size,
+            ring: Box::new(MaybeUninit::<xsk_ring_cons>::uninit()),
         })
     }
 
@@ -72,32 +44,38 @@ impl ConsumerRingUninit {
         let ring: Box<xsk_ring_cons> =
             unsafe { MaybeUninit::<xsk_ring_cons>::assume_init(*self.ring).into() };
         if ring.size != self.size {
-            return Err(RingError::Initialize(self.ring_type));
+            return Err(RingError::Initialize);
         }
 
-        let ring_ptr =
-            NonNull::new(Box::into_raw(ring)).ok_or(RingError::RingIsNull(self.ring_type))?;
+        let ring_ptr = NonNull::new(Box::into_raw(ring)).ok_or(RingError::RingIsNull)?;
 
         Ok(ConsumerRing(ring_ptr))
     }
 }
 
 pub struct ProducerRingUninit {
-    ring: Box<MaybeUninit<xsk_ring_prod>>,
-    ring_type: RingType,
     size: u32,
+    ring: Box<MaybeUninit<xsk_ring_prod>>,
+}
+
+impl Default for ProducerRingUninit {
+    fn default() -> Self {
+        Self {
+            size: XSK_RING_PROD__DEFAULT_NUM_DESCS,
+            ring: Box::new(MaybeUninit::<xsk_ring_prod>::uninit()),
+        }
+    }
 }
 
 impl ProducerRingUninit {
-    fn new(ring_type: RingType, size: u32) -> Result<Self, RingError> {
+    pub fn new(size: u32) -> Result<Self, RingError> {
         if !is_power_of_two(size) {
-            return Err(RingError::Size(ring_type, size));
+            return Err(RingError::Size(size));
         }
 
         Ok(Self {
-            ring: MaybeUninit::<xsk_ring_prod>::uninit().into(),
-            ring_type,
             size,
+            ring: MaybeUninit::<xsk_ring_prod>::uninit().into(),
         })
     }
 
@@ -109,11 +87,10 @@ impl ProducerRingUninit {
         let ring: Box<xsk_ring_prod> =
             unsafe { MaybeUninit::<xsk_ring_prod>::assume_init(*self.ring).into() };
         if ring.size != self.size {
-            return Err(RingError::Initialize(self.ring_type));
+            return Err(RingError::Initialize);
         }
 
-        let ring_ptr =
-            NonNull::new(Box::into_raw(ring)).ok_or(RingError::RingIsNull(self.ring_type))?;
+        let ring_ptr = NonNull::new(Box::into_raw(ring)).ok_or(RingError::RingIsNull)?;
 
         Ok(ProducerRing(ring_ptr))
     }
@@ -210,24 +187,31 @@ impl ProducerRing {
     }
 }
 
+pub struct DescriptorRing(Arc<ArrayQueue<Descriptor>>);
+
+impl Default for DescriptorRing {
+    fn default() -> Self {
+        let size = XSK_RING_CONS__DEFAULT_NUM_DESCS * 2;
+        let ring = ArrayQueue::<Descriptor>::new(size as usize);
+
+        Self(Arc::new(ring))
+    }
+}
+
 pub enum RingError {
-    Size(RingType, u32),
-    Initialize(RingType),
-    RingIsNull(RingType),
+    Size(u32),
+    Initialize,
+    RingIsNull,
 }
 
 impl std::fmt::Debug for RingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Size(ring_type, ring_size) => {
-                write!(
-                    f,
-                    "{:?} size ({}) is not the power of two",
-                    ring_type, ring_size
-                )
+            Self::Size(ring_size) => {
+                write!(f, "The ring size ({}) is not the power of two.", ring_size)
             }
-            Self::Initialize(ring_type) => write!(f, "Failed to initialize {:?}", ring_type),
-            Self::RingIsNull(ring_type) => write!(f, "{:?} is null", ring_type),
+            Self::Initialize => write!(f, "Failed to initialize the ring."),
+            Self::RingIsNull => write!(f, "The ring pointer returned null."),
         }
     }
 }

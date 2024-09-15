@@ -12,7 +12,7 @@ use mangonel_libxdp_sys::{
 
 use crate::{
     mmap::{Mmap, MmapError},
-    ring::{ConsumerRing, ProducerRing, RingError, RingType},
+    ring::{ConsumerRing, ConsumerRingUninit, ProducerRing, ProducerRingUninit, RingError},
 };
 
 pub struct Umem {
@@ -68,8 +68,8 @@ impl Umem {
         let mmap = Mmap::new(frame_size, headroom_size, fill_ring_size, use_hugetlb)?;
 
         let mut umem_ptr = null_mut::<xsk_umem>();
-        let mut fill_ring = RingType::fill_ring_uninit(fill_ring_size)?;
-        let mut completion_ring = RingType::completion_ring_uninit(completion_ring_size)?;
+        let mut fill_ring = ProducerRingUninit::new(fill_ring_size)?;
+        let mut completion_ring = ConsumerRingUninit::new(completion_ring_size)?;
         let umem_config = xsk_umem_config {
             fill_size: fill_ring_size,
             comp_size: completion_ring_size,

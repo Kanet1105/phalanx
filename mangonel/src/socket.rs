@@ -14,8 +14,8 @@ use mangonel_libxdp_sys::{
 };
 
 use crate::{
-    frame::Descriptor,
-    ring::{ConsumerRing, ProducerRing, RingError, RingType},
+    descriptor::Descriptor,
+    ring::{ConsumerRing, ConsumerRingUninit, ProducerRing, ProducerRingUninit, RingError},
     umem::{Umem, UmemError},
     util::setrlimit,
 };
@@ -38,7 +38,7 @@ impl Default for SocketBuilder {
         Self {
             frame_size: XSK_UMEM__DEFAULT_FRAME_SIZE,
             headroom_size: XSK_UMEM__DEFAULT_FRAME_HEADROOM,
-            descriptor_count: XSK_RING_CONS__DEFAULT_NUM_DESCS,
+            descriptor_count: XSK_RING_PROD__DEFAULT_NUM_DESCS * 2,
             fill_ring_size: XSK_RING_PROD__DEFAULT_NUM_DESCS,
             completion_ring_size: XSK_RING_CONS__DEFAULT_NUM_DESCS,
             rx_ring_size: XSK_RING_CONS__DEFAULT_NUM_DESCS,
@@ -115,8 +115,8 @@ impl Socket {
         queue_id: u32,
         umem: Umem,
     ) -> Result<(RxSocket, TxSocket), SocketError> {
-        let mut rx_ring = RingType::rx_ring_uninit(rx_ring_size)?;
-        let mut tx_ring = RingType::tx_ring_uninit(tx_ring_size)?;
+        let mut rx_ring = ConsumerRingUninit::new(rx_ring_size)?;
+        let mut tx_ring = ProducerRingUninit::new(tx_ring_size)?;
 
         let mut xdp_flags = 0;
         match force_zero_copy {
