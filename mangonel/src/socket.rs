@@ -1,5 +1,4 @@
 use std::{
-    collections::VecDeque,
     ffi::{CString, NulError},
     ptr::{null_mut, NonNull},
     sync::Arc,
@@ -147,7 +146,7 @@ impl Socket {
         };
 
         // Pre-fill the buffer with addresses.
-        let descriptor_buffer = RingBuffer::<u64>::new(ring_size as usize);
+        let mut descriptor_buffer = RingBuffer::<u64>::new(ring_size as usize);
         (0..ring_size).for_each(|descriptor_index: u32| {
             let offset = descriptor_index * (frame_headroom_size + frame_size);
             descriptor_buffer.push(offset as u64);
@@ -214,21 +213,24 @@ impl RxSocket {
     }
 
     #[inline(always)]
-    pub fn rx_burst(&mut self, buffer: &mut VecDeque<Descriptor>) -> u32 {
-        self.umem.fill(&self.descriptor_buffer);
+    pub fn rx_burst<T>(&mut self, buffer: &mut T) -> u32
+    where
+        T: Buffer<Descriptor>,
+    {
+        self.umem.fill(&mut self.descriptor_buffer);
         if self.umem.needs_wakeup() {
             self.socket.poll_fd();
         }
 
         let mut index: u32 = 0;
-        let batch_size = std::cmp::min(buffer.capacity() as u32, self.rx_ring.size);
+        let size = std::cmp::min(buffer.free() as u32, self.rx_ring.size);
 
-        let received = self.rx_ring.peek(batch_size, &mut index);
+        let received = self.rx_ring.peek(size, &mut index);
         if received > 0 {
             for _ in 0..received {
                 let descriptor_ptr = self.rx_ring.rx_descriptor(index);
                 let descriptor = Descriptor::from((descriptor_ptr, &self.umem));
-                buffer.push_back(descriptor);
+                buffer.push(descriptor);
                 index += 1;
             }
 
@@ -262,14 +264,16 @@ impl TxSocket {
     }
 
     #[inline(always)]
-    pub fn tx_burst(&mut self, buffer: &mut VecDeque<Descriptor>) -> u32 {
+    pub fn tx_burst<T>(&mut self, buffer: &mut T) -> u32
+    where
+        T: Buffer<Descriptor>,
+    {
         let mut index: u32 = 0;
-        let batch_size = buffer.len() as u32;
 
-        let available = self.tx_ring.reserve(batch_size, &mut index);
+        let available = self.tx_ring.reserve(buffer.count(), &mut index);
         if available > 0 {
             for _ in 0..available {
-                let descriptor = buffer.pop_front().unwrap();
+                let descriptor = buffer.pop().unwrap();
                 let descriptor_ptr = self.tx_ring.tx_descriptor(index);
                 unsafe {
                     (*descriptor_ptr).addr = descriptor.address();
@@ -284,7 +288,7 @@ impl TxSocket {
         if self.tx_ring.needs_wakeup() {
             self.socket.send_fd();
         }
-        self.umem.complete(&self.descriptor_buffer);
+        self.umem.complete(&mut self.descriptor_buffer);
 
         available
     }

@@ -121,7 +121,7 @@ impl Umem {
     }
 
     #[inline(always)]
-    pub fn fill<T: Buffer<u64>>(&self, buffer: &T) -> u32 {
+    pub fn fill<T: Buffer<u64>>(&self, buffer: &mut T) -> u32 {
         let mut index: u32 = 0;
         let size = std::cmp::min(buffer.count(), self.inner.fill_ring.size);
 
@@ -146,7 +146,7 @@ impl Umem {
     }
 
     #[inline(always)]
-    pub fn complete<T: Buffer<u64>>(&self, buffer: &T) -> u32 {
+    pub fn complete<T: Buffer<u64>>(&self, buffer: &mut T) -> u32 {
         let mut index: u32 = 0;
         let size = std::cmp::min(buffer.free(), self.inner.completion_ring.size);
 

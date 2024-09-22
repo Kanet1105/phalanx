@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use crossbeam::queue::ArrayQueue;
 
+use crate::descriptor::Descriptor;
+
 pub trait Buffer<T> {
     /// Return the number of items in the buffer.
     fn count(&self) -> u32;
@@ -11,10 +13,37 @@ pub trait Buffer<T> {
     fn free(&self) -> u32;
 
     /// Return [None] if the buffer is empty.
-    fn pop(&self) -> Option<T>;
+    fn pop(&mut self) -> Option<T>;
 
     /// Return a previous value if the buffer is full.
-    fn push(&self, value: T) -> Option<T>;
+    fn push(&mut self, value: T) -> Option<T>;
+}
+
+impl Buffer<Descriptor> for std::collections::VecDeque<Descriptor> {
+    fn count(&self) -> u32 {
+        self.len() as u32
+    }
+
+    fn free(&self) -> u32 {
+        (self.capacity() - self.len()) as u32
+    }
+
+    fn pop(&mut self) -> Option<Descriptor> {
+        self.pop_front()
+    }
+
+    fn push(&mut self, value: Descriptor) -> Option<Descriptor> {
+        if self.free() == 0 {
+            let overflow = self.pop_front();
+            self.push_back(value);
+
+            return overflow;
+        } else {
+            self.push_back(value);
+
+            return None;
+        }
+    }
 }
 
 pub struct RingBuffer<T> {
@@ -41,12 +70,12 @@ impl<T> Buffer<T> for RingBuffer<T> {
     }
 
     #[inline(always)]
-    fn pop(&self) -> Option<T> {
+    fn pop(&mut self) -> Option<T> {
         self.inner.pop()
     }
 
     #[inline(always)]
-    fn push(&self, value: T) -> Option<T> {
+    fn push(&mut self, value: T) -> Option<T> {
         self.inner.force_push(value)
     }
 }
