@@ -17,11 +17,11 @@ pub trait Buffer<T> {
     fn push(&self, value: T) -> Option<T>;
 }
 
-pub struct DescriptorBuffer<T> {
+pub struct RingBuffer<T> {
     inner: Arc<ArrayQueue<T>>,
 }
 
-impl<T> Clone for DescriptorBuffer<T> {
+impl<T> Clone for RingBuffer<T> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -29,7 +29,7 @@ impl<T> Clone for DescriptorBuffer<T> {
     }
 }
 
-impl<T> Buffer<T> for DescriptorBuffer<T> {
+impl<T> Buffer<T> for RingBuffer<T> {
     #[inline(always)]
     fn count(&self) -> u32 {
         self.inner.len() as u32
@@ -51,7 +51,7 @@ impl<T> Buffer<T> for DescriptorBuffer<T> {
     }
 }
 
-impl<T> DescriptorBuffer<T> {
+impl<T> RingBuffer<T> {
     pub fn new(capacity: usize) -> Self {
         let ring_buffer = ArrayQueue::<T>::new(capacity);
 
