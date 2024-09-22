@@ -13,7 +13,7 @@ use mangonel_libxdp_sys::{
 };
 
 use crate::{
-    buffer::{Buffer, DescriptorBuffer},
+    buffer::{Buffer, RingBuffer},
     descriptor::Descriptor,
     ring::{ConsumerRing, ConsumerRingUninit, ProducerRing, ProducerRingUninit, RingError},
     umem::{Umem, UmemError},
@@ -147,7 +147,7 @@ impl Socket {
         };
 
         // Pre-fill the buffer with addresses.
-        let descriptor_buffer = DescriptorBuffer::<u64>::new(ring_size as usize);
+        let descriptor_buffer = RingBuffer::<u64>::new(ring_size as usize);
         (0..ring_size).for_each(|descriptor_index: u32| {
             let offset = descriptor_index * (frame_headroom_size + frame_size);
             descriptor_buffer.push(offset as u64);
@@ -194,7 +194,7 @@ impl Socket {
 pub struct RxSocket {
     socket: Socket,
     rx_ring: ConsumerRing,
-    descriptor_buffer: DescriptorBuffer<u64>,
+    descriptor_buffer: RingBuffer<u64>,
     umem: Umem,
 }
 
@@ -202,7 +202,7 @@ impl RxSocket {
     pub fn new(
         socket: Socket,
         rx_ring: ConsumerRing,
-        descriptor_buffer: DescriptorBuffer<u64>,
+        descriptor_buffer: RingBuffer<u64>,
         umem: Umem,
     ) -> Self {
         Self {
@@ -242,7 +242,7 @@ impl RxSocket {
 pub struct TxSocket {
     socket: Socket,
     tx_ring: ProducerRing,
-    descriptor_buffer: DescriptorBuffer<u64>,
+    descriptor_buffer: RingBuffer<u64>,
     umem: Umem,
 }
 
@@ -250,7 +250,7 @@ impl TxSocket {
     pub fn new(
         socket: Socket,
         tx_ring: ProducerRing,
-        descriptor_buffer: DescriptorBuffer<u64>,
+        descriptor_buffer: RingBuffer<u64>,
         umem: Umem,
     ) -> Self {
         Self {
