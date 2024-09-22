@@ -130,6 +130,10 @@ impl Umem {
             for _ in 0..available {
                 let address = self.inner.fill_ring.fill_address(index);
                 unsafe {
+                    // # Safety
+                    //
+                    // It is safe to call `unwrap()` because the size variable is always smaller
+                    // than the number of descriptors in the buffer.
                     *address = buffer.pop().unwrap();
                 }
                 index += 1;
