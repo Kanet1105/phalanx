@@ -9,6 +9,7 @@ use mangonel_libxdp_sys::{
 };
 
 use crate::{
+    buffer::Buffer,
     mmap::{Mmap, MmapError},
     ring::{ConsumerRing, ConsumerRingUninit, ProducerRing, ProducerRingUninit, RingError},
 };
@@ -23,6 +24,10 @@ struct UmemInner {
     fill_ring: ProducerRing,
     mmap: Mmap,
 }
+
+unsafe impl Send for UmemInner {}
+
+unsafe impl Sync for UmemInner {}
 
 impl Drop for UmemInner {
     /// # Panics
@@ -41,10 +46,6 @@ impl Drop for UmemInner {
     }
 }
 
-unsafe impl Send for Umem {}
-
-unsafe impl Sync for Umem {}
-
 impl Clone for Umem {
     #[inline(always)]
     fn clone(&self) -> Self {
@@ -59,10 +60,9 @@ impl Umem {
         frame_size: u32,
         frame_headroom_size: u32,
         ring_size: u32,
-        descriptor_count: u32,
         use_hugetlb: bool,
     ) -> Result<Self, UmemError> {
-        let length = frame_size * descriptor_count;
+        let length = frame_size * ring_size;
         let mmap = Mmap::new(length as usize, use_hugetlb)?;
 
         let mut umem_ptr = null_mut::<xsk_umem>();
@@ -71,7 +71,7 @@ impl Umem {
         let umem_config = xsk_umem_config {
             fill_size: ring_size,
             comp_size: ring_size,
-            frame_size: frame_size,
+            frame_size,
             frame_headroom: frame_headroom_size,
             flags: 0,
         };
@@ -111,18 +111,55 @@ impl Umem {
     }
 
     #[inline(always)]
-    pub(crate) fn fill_ring(&self) -> &ProducerRing {
-        &self.inner.fill_ring
-    }
-
-    #[inline(always)]
-    pub(crate) fn completion_ring(&self) -> &ConsumerRing {
-        &self.inner.completion_ring
-    }
-
-    #[inline(always)]
     pub(crate) fn get_data(&self, address: u64) -> *mut c_void {
         unsafe { xsk_umem__get_data(self.inner.mmap.as_ptr(), address) }
+    }
+
+    #[inline(always)]
+    pub fn needs_wakeup(&self) -> bool {
+        self.inner.fill_ring.needs_wakeup()
+    }
+
+    #[inline(always)]
+    pub fn fill<T: Buffer<u64>>(&self, buffer: &T) -> u32 {
+        let mut index: u32 = 0;
+        let size = std::cmp::min(buffer.count(), self.inner.fill_ring.size);
+
+        let available = self.inner.fill_ring.reserve(size, &mut index);
+        if available > 0 {
+            for _ in 0..available {
+                let address = self.inner.fill_ring.fill_address(index);
+                unsafe {
+                    *address = buffer.pop().unwrap();
+                }
+                index += 1;
+            }
+
+            self.inner.fill_ring.submit(available);
+        }
+
+        available
+    }
+
+    #[inline(always)]
+    pub fn complete<T: Buffer<u64>>(&self, buffer: &T) -> u32 {
+        let mut index: u32 = 0;
+        let size = std::cmp::min(buffer.free(), self.inner.completion_ring.size);
+
+        let available = self.inner.completion_ring.peek(size, &mut index);
+        if available > 0 {
+            for _ in 0..available {
+                let address = self.inner.completion_ring.complete_address(index);
+                unsafe {
+                    buffer.push(*address);
+                }
+                index += 1;
+            }
+
+            self.inner.completion_ring.release(available);
+        }
+
+        available
     }
 }
 
