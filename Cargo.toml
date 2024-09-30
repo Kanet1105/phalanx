@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "mangonel",
+    "mangonel-libxdp-rs",
     "mangonel-libxdp-sys",
 ]
 resolver = "2"
