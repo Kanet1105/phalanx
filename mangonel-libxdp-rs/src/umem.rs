@@ -19,6 +19,7 @@ pub struct Umem {
 }
 
 struct UmemInner {
+    umem_config: xsk_umem_config,
     umem: NonNull<xsk_umem>,
     completion_ring: ConsumerRing,
     fill_ring: ProducerRing,
@@ -93,6 +94,7 @@ impl Umem {
         }
 
         let inner = UmemInner {
+            umem_config,
             umem: NonNull::new(umem_ptr).ok_or(UmemError::UmemIsNull)?,
             fill_ring: fill_ring.init()?,
             completion_ring: completion_ring.init()?,
@@ -113,6 +115,16 @@ impl Umem {
     #[inline(always)]
     pub(crate) fn get_data(&self, address: u64) -> *mut c_void {
         unsafe { xsk_umem__get_data(self.inner.mmap.as_ptr(), address) }
+    }
+
+    #[inline(always)]
+    pub fn headroom_size(&self) -> u32 {
+        self.inner.umem_config.frame_headroom
+    }
+
+    #[inline(always)]
+    pub fn frame_size(&self) -> u32 {
+        self.inner.umem_config.frame_size
     }
 
     #[inline(always)]
