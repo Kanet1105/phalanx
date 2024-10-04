@@ -32,10 +32,15 @@ impl Descriptor {
         self.length
     }
 
+    /// Return a mutable slice of the frame including its headroom.
     #[inline(always)]
     pub fn get_data(&mut self) -> &mut [u8] {
-        let offset = self.umem.get_data(self.address) as *mut u8;
-        let data = unsafe { std::slice::from_raw_parts_mut(offset, self.length as usize) };
+        let headroom_size = self.umem.headroom_size();
+        let address = self.address - headroom_size as u64;
+        let length = self.length + headroom_size;
+        let offset = self.umem.get_data(address) as *mut u8;
+        let data = unsafe { std::slice::from_raw_parts_mut(offset, length as usize) };
+
         data
     }
 }
