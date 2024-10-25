@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 core_affinity = "0.8"
+const-hex = "1.12"
 ctrlc = "3.4"
 mangonel-libxdp-rs = { path = "../mangonel-libxdp-rs" }
 pnet = "0.35"
