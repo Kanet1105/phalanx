@@ -9,9 +9,9 @@ use mangonel_libxdp_sys::{
 };
 
 use crate::{
-    buffer::Buffer,
     mmap::{Mmap, MmapError},
     ring::{ConsumerRing, ConsumerRingUninit, ProducerRing, ProducerRingUninit, RingError},
+    ring_buffer::Buffer,
 };
 
 pub struct Umem {
