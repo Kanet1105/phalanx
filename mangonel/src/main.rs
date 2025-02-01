@@ -8,7 +8,7 @@ use std::{
 };
 
 use mangonel::{interface::Port, packet::Packet};
-use mangonel_libxdp_rs::{descriptor::Descriptor, socket::SocketBuilder};
+use mangonel_libxdp_rs::socket::SocketBuilder;
 
 fn main() {
     let flag = Arc::new(AtomicBool::new(true));
