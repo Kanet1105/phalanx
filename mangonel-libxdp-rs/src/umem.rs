@@ -11,7 +11,6 @@ use mangonel_libxdp_sys::{
 use crate::{
     mmap::{Mmap, MmapError},
     ring::{ConsumerRing, ConsumerRingUninit, ProducerRing, ProducerRingUninit, RingError},
-    ring_buffer::Buffer,
 };
 
 pub struct Umem {
@@ -132,51 +131,51 @@ impl Umem {
         self.inner.fill_ring.needs_wakeup()
     }
 
-    #[inline(always)]
-    pub fn fill<T: Buffer<u64>>(&self, buffer: &mut T) -> u32 {
-        let mut index: u32 = 0;
-        let size = std::cmp::min(buffer.count(), self.inner.fill_ring.size);
+    // #[inline(always)]
+    // pub fn fill<T: Buffer<u64>>(&self, buffer: &mut T) -> u32 {
+    //     let mut index: u32 = 0;
+    //     let size = std::cmp::min(buffer.count(), self.inner.fill_ring.size);
 
-        let available = self.inner.fill_ring.reserve(size, &mut index);
-        if available > 0 {
-            for _ in 0..available {
-                let address = self.inner.fill_ring.fill_address(index);
-                unsafe {
-                    // # Safety
-                    //
-                    // It is safe to call `unwrap()` because the size variable is always smaller
-                    // than the number of descriptors in the buffer.
-                    *address = buffer.pop().unwrap();
-                }
-                index += 1;
-            }
+    //     let available = self.inner.fill_ring.reserve(size, &mut index);
+    //     if available > 0 {
+    //         for _ in 0..available {
+    //             let address = self.inner.fill_ring.fill_address(index);
+    //             unsafe {
+    //                 // # Safety
+    //                 //
+    //                 // It is safe to call `unwrap()` because the size variable is
+    // always smaller                 // than the number of descriptors in the
+    // buffer.                 *address = buffer.pop().unwrap();
+    //             }
+    //             index += 1;
+    //         }
 
-            self.inner.fill_ring.submit(available);
-        }
+    //         self.inner.fill_ring.submit(available);
+    //     }
 
-        available
-    }
+    //     available
+    // }
 
-    #[inline(always)]
-    pub fn complete<T: Buffer<u64>>(&self, buffer: &mut T) -> u32 {
-        let mut index: u32 = 0;
-        let size = std::cmp::min(buffer.free(), self.inner.completion_ring.size);
+    // #[inline(always)]
+    // pub fn complete<T: Buffer<u64>>(&self, buffer: &mut T) -> u32 {
+    //     let mut index: u32 = 0;
+    //     let size = std::cmp::min(buffer.free(), self.inner.completion_ring.size);
 
-        let available = self.inner.completion_ring.peek(size, &mut index);
-        if available > 0 {
-            for _ in 0..available {
-                let address = self.inner.completion_ring.complete_address(index);
-                unsafe {
-                    buffer.push(*address);
-                }
-                index += 1;
-            }
+    //     let available = self.inner.completion_ring.peek(size, &mut index);
+    //     if available > 0 {
+    //         for _ in 0..available {
+    //             let address = self.inner.completion_ring.complete_address(index);
+    //             unsafe {
+    //                 buffer.push(*address);
+    //             }
+    //             index += 1;
+    //         }
 
-            self.inner.completion_ring.release(available);
-        }
+    //         self.inner.completion_ring.release(available);
+    //     }
 
-        available
-    }
+    //     available
+    // }
 }
 
 #[derive(Debug)]

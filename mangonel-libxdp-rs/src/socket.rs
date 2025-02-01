@@ -13,7 +13,6 @@ use mangonel_libxdp_sys::{
 };
 
 use crate::{
-    buffer::Buffer,
     descriptor::Descriptor,
     ring::{ConsumerRing, ConsumerRingUninit, ProducerRing, ProducerRingUninit, RingError},
     umem::{Umem, UmemError},
@@ -202,32 +201,32 @@ impl RxSocket {
         self.umem.clone()
     }
 
-    #[inline(always)]
-    pub fn rx_burst<T>(&mut self, buffer: &mut T) -> u32
-    where
-        T: Buffer<Descriptor>,
-    {
-        if self.umem.needs_wakeup() {
-            self.socket.poll_fd();
-        }
+    // #[inline(always)]
+    // pub fn rx_burst<T>(&mut self, buffer: &mut T) -> u32
+    // where
+    //     T: Buffer<Descriptor>,
+    // {
+    //     if self.umem.needs_wakeup() {
+    //         self.socket.poll_fd();
+    //     }
 
-        let mut index: u32 = 0;
-        let size = std::cmp::min(buffer.free() as u32, self.rx_ring.size);
+    //     let mut index: u32 = 0;
+    //     let size = std::cmp::min(buffer.free() as u32, self.rx_ring.size);
 
-        let received = self.rx_ring.peek(size, &mut index);
-        if received > 0 {
-            for _ in 0..received {
-                let descriptor_ptr = self.rx_ring.rx_descriptor(index);
-                let descriptor = Descriptor::from((descriptor_ptr, &self.umem));
-                buffer.push(descriptor);
-                index += 1;
-            }
+    //     let received = self.rx_ring.peek(size, &mut index);
+    //     if received > 0 {
+    //         for _ in 0..received {
+    //             let descriptor_ptr = self.rx_ring.rx_descriptor(index);
+    //             let descriptor = Descriptor::from((descriptor_ptr, &self.umem));
+    //             buffer.push(descriptor);
+    //             index += 1;
+    //         }
 
-            self.rx_ring.release(received);
-        }
+    //         self.rx_ring.release(received);
+    //     }
 
-        received
-    }
+    //     received
+    // }
 }
 
 pub struct TxSocket {
@@ -250,34 +249,34 @@ impl TxSocket {
         self.umem.clone()
     }
 
-    #[inline(always)]
-    pub fn tx_burst<T>(&mut self, buffer: &mut T) -> u32
-    where
-        T: Buffer<Descriptor>,
-    {
-        let mut index: u32 = 0;
+    // #[inline(always)]
+    // pub fn tx_burst<T>(&mut self, buffer: &mut T) -> u32
+    // where
+    //     T: Buffer<Descriptor>,
+    // {
+    //     let mut index: u32 = 0;
 
-        let available = self.tx_ring.reserve(buffer.count(), &mut index);
-        if available > 0 {
-            for _ in 0..available {
-                let descriptor = buffer.pop().unwrap();
-                let descriptor_ptr = self.tx_ring.tx_descriptor(index);
-                unsafe {
-                    (*descriptor_ptr).addr = descriptor.address();
-                    (*descriptor_ptr).len = descriptor.length();
-                }
-                index += 1;
-            }
+    //     let available = self.tx_ring.reserve(buffer.count(), &mut index);
+    //     if available > 0 {
+    //         for _ in 0..available {
+    //             let descriptor = buffer.pop().unwrap();
+    //             let descriptor_ptr = self.tx_ring.tx_descriptor(index);
+    //             unsafe {
+    //                 (*descriptor_ptr).addr = descriptor.address();
+    //                 (*descriptor_ptr).len = descriptor.length();
+    //             }
+    //             index += 1;
+    //         }
 
-            self.tx_ring.submit(available);
-        }
+    //         self.tx_ring.submit(available);
+    //     }
 
-        if self.tx_ring.needs_wakeup() {
-            self.socket.send_fd();
-        }
+    //     if self.tx_ring.needs_wakeup() {
+    //         self.socket.send_fd();
+    //     }
 
-        available
-    }
+    //     available
+    // }
 }
 
 #[derive(Debug)]
