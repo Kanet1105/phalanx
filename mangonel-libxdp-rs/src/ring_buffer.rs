@@ -296,7 +296,8 @@ pub struct RxRing {
     ring_buffer: NonNull<xsk_ring_cons>,
 }
 
-impl BufferReader<xdp_desc> for RxRing {
+impl BufferReader<u64> for RxRing {
+    #[inline(always)]
     fn filled(&self, size: u32) -> (u32, u32) {
         let mut index = 0;
         let filled = unsafe { xsk_ring_cons__peek(self.as_ptr(), size, &mut index) };
@@ -304,8 +305,16 @@ impl BufferReader<xdp_desc> for RxRing {
         (filled, index)
     }
 
-    fn get(&self, index: u32) -> &xdp_desc {}
+    #[inline(always)]
+    fn get(&self, index: u32) -> &u64 {
+        unsafe {
+            xsk_ring_cons__comp_addr(self.as_ptr(), index)
+                .as_ref()
+                .unwrap()
+        }
+    }
 
+    #[inline(always)]
     fn advance_index(&mut self, offset: u32) {
         unsafe { xsk_ring_cons__release(self.as_ptr(), offset) }
     }
@@ -333,6 +342,30 @@ impl RxRing {
 
 pub struct TxRing {
     ring_buffer: NonNull<xsk_ring_prod>,
+}
+
+impl BufferWriter<u64> for TxRing {
+    #[inline(always)]
+    fn available(&self, size: u32) -> (u32, u32) {
+        let mut index = 0;
+        let available = unsafe { xsk_ring_prod__reserve(self.as_ptr(), size, &mut index) };
+
+        (available, index)
+    }
+
+    #[inline(always)]
+    fn get_mut(&mut self, index: u32) -> &mut u64 {
+        unsafe {
+            xsk_ring_prod__fill_addr(self.as_ptr(), index)
+                .as_mut()
+                .unwrap()
+        }
+    }
+
+    #[inline(always)]
+    fn advance_index(&mut self, offset: u32) {
+        unsafe { xsk_ring_prod__submit(self.as_ptr(), offset) }
+    }
 }
 
 impl TxRing {
