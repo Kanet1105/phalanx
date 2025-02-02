@@ -200,6 +200,8 @@ pub struct FillRing {
     ring_buffer: NonNull<xsk_ring_prod>,
 }
 
+unsafe impl Send for FillRing {}
+
 impl BufferWriter<u64> for FillRing {
     #[inline(always)]
     fn available(&self, size: u32) -> (u32, u32) {
@@ -247,6 +249,8 @@ impl FillRing {
 pub struct CompletionRing {
     ring_buffer: NonNull<xsk_ring_cons>,
 }
+
+unsafe impl Send for CompletionRing {}
 
 impl BufferReader<u64> for CompletionRing {
     #[inline(always)]
@@ -296,6 +300,8 @@ pub struct TxRing {
     ring_buffer: NonNull<xsk_ring_prod>,
 }
 
+unsafe impl Send for TxRing {}
+
 impl BufferWriter<u64> for TxRing {
     #[inline(always)]
     fn available(&self, size: u32) -> (u32, u32) {
@@ -343,6 +349,8 @@ impl TxRing {
 pub struct RxRing {
     ring_buffer: NonNull<xsk_ring_cons>,
 }
+
+unsafe impl Send for RxRing {}
 
 impl BufferReader<u64> for RxRing {
     #[inline(always)]
