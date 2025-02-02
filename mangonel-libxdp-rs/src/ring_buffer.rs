@@ -66,8 +66,22 @@ impl<T: Copy> RingBuffer<T> {
         let mut buffer = Vec::<T>::with_capacity(capacity as usize);
         let t = unsafe { MaybeUninit::<T>::zeroed().assume_init() };
         (0..capacity).for_each(|_| buffer.push(t));
+        let buffer_ptr = Box::into_raw(Box::new(buffer));
 
-        Self::from_vec(buffer)
+        let ring_buffer = Self {
+            inner: RingBufferInner {
+                buffer: NonNull::new(buffer_ptr).ok_or(RingError::Initialize)?,
+                capacity: capacity as u32,
+                head: 0.into(),
+                tail: 0.into(),
+            }
+            .into(),
+        };
+
+        let writer = RingBufferWriter::new(ring_buffer.clone());
+        let reader = RingBufferReader::new(ring_buffer);
+
+        Ok((writer, reader))
     }
 
     pub fn from_vec(vec: Vec<T>) -> Result<(RingBufferWriter<T>, RingBufferReader<T>), RingError> {
@@ -76,9 +90,9 @@ impl<T: Copy> RingBuffer<T> {
         let ring_buffer = Self {
             inner: RingBufferInner {
                 buffer: NonNull::new(buffer_ptr).ok_or(RingError::Initialize)?,
-                capacity: capacity.try_into().unwrap(),
+                capacity: capacity as u32,
                 head: 0.into(),
-                tail: 0.into(),
+                tail: (capacity as u32).into(),
             }
             .into(),
         };
