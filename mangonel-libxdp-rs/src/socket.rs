@@ -154,6 +154,12 @@ impl Socket {
             .into(),
         };
 
+        let mut prefilled_buffer = Vec::<u64>::with_capacity(ring_size as usize);
+        (0..ring_size).for_each(|descriptor_index| {
+            let address = descriptor_index * (frame_size + frame_headroom_size);
+            prefilled_buffer.push(address as u64);
+        });
+
         let (buffer_writer, buffer_reader) =
             RingBuffer::new(ring_size).map_err(SocketError::Ring)?;
 
@@ -305,7 +311,7 @@ impl RxSocket {
     #[inline(always)]
     pub fn read(&mut self, buffer: &mut [u64]) -> u32 {
         self.poll();
-        self.fill(buffer.len() as u32);
+        self.fill(self.socket.umem().umem_config().fill_size);
 
         let (filled, index) = self.rx_ring.filled(buffer.len() as u32);
 
