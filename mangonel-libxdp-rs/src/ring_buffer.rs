@@ -131,10 +131,10 @@ impl<T: Copy> BufferWriter<T> for RingBufferWriter<T> {
         let capacity = self.ring_buffer.capacity();
 
         let available = capacity - tail_index.wrapping_sub(head_index);
-        if available >= size {
+        if available > size {
             (size, tail_index)
         } else {
-            (0, tail_index)
+            (available, tail_index)
         }
     }
 
@@ -169,10 +169,10 @@ impl<T: Copy> BufferReader<T> for RingBufferReader<T> {
         let tail_index = self.ring_buffer.tail_index();
 
         let filled = tail_index.wrapping_sub(head_index);
-        if filled >= size {
+        if filled > size {
             (size, head_index)
         } else {
-            (0, head_index)
+            (filled, head_index)
         }
     }
 
