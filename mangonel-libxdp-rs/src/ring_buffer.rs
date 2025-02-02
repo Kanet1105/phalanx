@@ -8,8 +8,9 @@ use std::{
 };
 
 use mangonel_libxdp_sys::{
-    xsk_ring_cons, xsk_ring_cons__comp_addr, xsk_ring_cons__peek, xsk_ring_cons__release,
-    xsk_ring_prod, xsk_ring_prod__fill_addr, xsk_ring_prod__reserve, xsk_ring_prod__submit,
+    xdp_desc, xsk_ring_cons, xsk_ring_cons__comp_addr, xsk_ring_cons__peek, xsk_ring_cons__release,
+    xsk_ring_cons__rx_desc, xsk_ring_prod, xsk_ring_prod__fill_addr, xsk_ring_prod__reserve,
+    xsk_ring_prod__submit, xsk_ring_prod__tx_desc,
 };
 
 use crate::util::is_power_of_two;
@@ -322,7 +323,7 @@ pub struct TxRing {
 
 unsafe impl Send for TxRing {}
 
-impl BufferWriter<u64> for TxRing {
+impl BufferWriter<xdp_desc> for TxRing {
     #[inline(always)]
     fn available(&self, size: u32) -> (u32, u32) {
         let mut index = 0;
@@ -332,9 +333,9 @@ impl BufferWriter<u64> for TxRing {
     }
 
     #[inline(always)]
-    fn get_mut(&mut self, index: u32) -> &mut u64 {
+    fn get_mut(&mut self, index: u32) -> &mut xdp_desc {
         unsafe {
-            xsk_ring_prod__fill_addr(self.as_ptr(), index)
+            xsk_ring_prod__tx_desc(self.as_ptr(), index)
                 .as_mut()
                 .unwrap()
         }
@@ -372,7 +373,7 @@ pub struct RxRing {
 
 unsafe impl Send for RxRing {}
 
-impl BufferReader<u64> for RxRing {
+impl BufferReader<xdp_desc> for RxRing {
     #[inline(always)]
     fn filled(&self, size: u32) -> (u32, u32) {
         let mut index = 0;
@@ -382,9 +383,9 @@ impl BufferReader<u64> for RxRing {
     }
 
     #[inline(always)]
-    fn get(&self, index: u32) -> &u64 {
+    fn get(&self, index: u32) -> &xdp_desc {
         unsafe {
-            xsk_ring_cons__comp_addr(self.as_ptr(), index)
+            xsk_ring_cons__rx_desc(self.as_ptr(), index)
                 .as_ref()
                 .unwrap()
         }
