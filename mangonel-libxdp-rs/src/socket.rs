@@ -113,8 +113,8 @@ impl Socket {
         let mut socket = null_mut();
         let interface_name =
             CString::new(interface_name.as_ref()).map_err(SocketError::InvalidInterfaceName)?;
-        let mut rx_ring = RxRing::new(ring_size).map_err(SocketError::Ring)?;
-        let mut tx_ring = TxRing::new(ring_size).map_err(SocketError::Ring)?;
+        let rx_ring = RxRing::new(ring_size).map_err(SocketError::Ring)?;
+        let tx_ring = TxRing::new(ring_size).map_err(SocketError::Ring)?;
         let mut xdp_flags = 0;
         match force_zero_copy {
             true => xdp_flags |= XDP_ZEROCOPY,
@@ -164,12 +164,14 @@ impl Socket {
     }
 
     #[inline(always)]
-    pub(crate) fn socket_fd(&self) -> i32 {
+    pub fn socket_fd(&self) -> i32 {
         unsafe { xsk_socket__fd(self.inner.socket.as_ptr()) }
     }
 
     #[inline(always)]
-    pub(crate) fn send_fd(&self) {}
+    pub fn umem(&self) -> &Umem {
+        &self.inner.umem
+    }
 }
 
 pub struct TxSocket {
@@ -277,7 +279,6 @@ impl RxSocket {
             events: POLLIN,
             revents: 0,
         };
-
         unsafe { poll(&mut poll_fd_struct, 1, 0) };
     }
 
@@ -304,7 +305,7 @@ impl RxSocket {
     #[inline(always)]
     pub fn read(&mut self, buffer: &mut [u64]) -> u32 {
         self.poll();
-        self.fill(32);
+        self.fill(buffer.len() as u32);
 
         let (filled, index) = self.rx_ring.filled(buffer.len() as u32);
 
