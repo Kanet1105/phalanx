@@ -12,6 +12,7 @@ use mangonel_libxdp_sys::{
 };
 
 use crate::{
+    descriptor::Descriptor,
     mmap::{Mmap, MmapError},
     ring_buffer::{
         BufferReader, BufferWriter, CompletionRing, FillRing, RingBuffer, RingBufferReader,
@@ -159,9 +160,8 @@ impl Socket {
             let address = descriptor_index * (frame_size + frame_headroom_size);
             prefilled_buffer.push(address as u64);
         });
-
         let (buffer_writer, buffer_reader) =
-            RingBuffer::new(ring_size).map_err(SocketError::Ring)?;
+            RingBuffer::from_vec(prefilled_buffer).map_err(SocketError::Ring)?;
 
         let tx_socket = TxSocket::new(socket.clone(), completion_ring, tx_ring, buffer_writer);
         let rx_socket = RxSocket::new(socket, fill_ring, rx_ring, buffer_reader);
@@ -218,8 +218,14 @@ impl TxSocket {
 
     #[inline(always)]
     fn complete(&mut self, size: u32) -> u32 {
+        let (filled, reader_index) = self.completion_ring.filled(size);
+        if filled > 0 {
+            println!("[Complete] Filled: {}", filled);
+        }
         let (available, writer_index) = self.buffer_writer.available(size);
-        let (filled, reader_index) = self.completion_ring.filled(available);
+        if available > 0 {
+            println!("[Complete] Available: {}", available);
+        }
 
         if filled > 0 {
             for offset in 0..filled {
@@ -243,13 +249,14 @@ impl TxSocket {
         if available > 0 {
             for offset in 0..available {
                 let data = self.tx_ring.get_mut(index + offset);
-                *data = buffer[offset as usize];
+                data.addr = buffer[offset as usize];
+                println!("{:?}", data);
             }
             self.tx_ring.advance_index(available);
             self.send();
-            self.complete(available);
+            self.complete(self.socket.umem().umem_config().comp_size);
 
-            0
+            available
         } else {
             0
         }
@@ -291,7 +298,13 @@ impl RxSocket {
     #[inline(always)]
     fn fill(&mut self, size: u32) -> u32 {
         let (filled, reader_index) = self.buffer_reader.filled(size);
+        if filled > 0 {
+            println!("[Fill] Filled: {}", filled);
+        }
         let (available, writer_index) = self.fill_ring.available(filled);
+        if available > 0 {
+            println!("[Fill] Available: {}", available);
+        }
 
         if available > 0 {
             for offset in 0..available {
@@ -309,16 +322,16 @@ impl RxSocket {
     }
 
     #[inline(always)]
-    pub fn read(&mut self, buffer: &mut [u64]) -> u32 {
+    pub fn read(&mut self, buffer: &mut [Descriptor], burst_size: u32) -> u32 {
         self.poll();
         self.fill(self.socket.umem().umem_config().fill_size);
-
-        let (filled, index) = self.rx_ring.filled(buffer.len() as u32);
+        let (filled, index) = self.rx_ring.filled(burst_size);
 
         if filled > 0 {
             for offset in 0..filled {
-                let data = self.rx_ring.get(index + offset);
-                buffer[offset as usize] = *data;
+                let descriptor_ref = self.rx_ring.get(index + offset);
+                let descriptor = Descriptor::from((descriptor_ref, &self.socket));
+                buffer[offset as usize] = descriptor;
             }
             self.rx_ring.advance_index(filled);
 
