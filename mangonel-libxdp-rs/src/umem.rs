@@ -79,6 +79,7 @@ impl Umem {
         Ok((umem, fill_ring, completion_ring))
     }
 
+    #[inline(always)]
     pub fn umem_config(&self) -> &xsk_umem_config {
         &self.umem_config
     }
